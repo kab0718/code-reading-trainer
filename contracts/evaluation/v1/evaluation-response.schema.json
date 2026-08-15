@@ -1,0 +1,221 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://code-reading-trainer.example/contracts/evaluation/v1/evaluation-response.schema.json",
+  "title": "EvaluationResponseV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "requestId",
+    "contractVersion",
+    "totalScore",
+    "criteria",
+    "strengths",
+    "gaps",
+    "modelAnswer",
+    "evaluatedAt"
+  ],
+  "properties": {
+    "requestId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "contractVersion": {
+      "const": "1.0"
+    },
+    "totalScore": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100
+    },
+    "criteria": {
+      "type": "array",
+      "minItems": 6,
+      "maxItems": 6,
+      "prefixItems": [
+        {
+          "allOf": [
+            { "$ref": "#/$defs/criterion" },
+            {
+              "type": "object",
+              "properties": {
+                "id": { "const": "purpose" },
+                "label": { "const": "目的・責務" },
+                "baseWeight": { "const": 25 }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/criterion" },
+            {
+              "type": "object",
+              "properties": {
+                "id": { "const": "inputs_outputs" },
+                "label": { "const": "入出力" },
+                "baseWeight": { "const": 15 }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/criterion" },
+            {
+              "type": "object",
+              "properties": {
+                "id": { "const": "main_flow" },
+                "label": { "const": "主要処理" },
+                "baseWeight": { "const": 25 }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/criterion" },
+            {
+              "type": "object",
+              "properties": {
+                "id": { "const": "branches_errors" },
+                "label": { "const": "分岐・例外" },
+                "baseWeight": { "const": 15 }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/criterion" },
+            {
+              "type": "object",
+              "properties": {
+                "id": { "const": "side_effects" },
+                "label": { "const": "副作用" },
+                "baseWeight": { "const": 10 }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/criterion" },
+            {
+              "type": "object",
+              "properties": {
+                "id": { "const": "assumptions_dependencies" },
+                "label": { "const": "前提・依存" },
+                "baseWeight": { "const": 10 }
+              }
+            }
+          ]
+        }
+      ],
+      "items": false
+    },
+    "strengths": {
+      "type": "array",
+      "maxItems": 5,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 500
+      }
+    },
+    "gaps": {
+      "type": "array",
+      "maxItems": 5,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 500
+      }
+    },
+    "modelAnswer": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 5000
+    },
+    "evaluatedAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "$defs": {
+    "criterion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "label",
+        "applicable",
+        "baseWeight",
+        "score",
+        "maxScore",
+        "feedback",
+        "exclusionReason"
+      ],
+      "properties": {
+        "id": {
+          "enum": [
+            "purpose",
+            "inputs_outputs",
+            "main_flow",
+            "branches_errors",
+            "side_effects",
+            "assumptions_dependencies"
+          ]
+        },
+        "label": { "type": "string" },
+        "applicable": {
+          "type": "boolean"
+        },
+        "baseWeight": { "type": "integer" },
+        "score": {
+          "type": ["integer", "null"],
+          "minimum": 0,
+          "maximum": 100
+        },
+        "maxScore": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "feedback": {
+          "type": ["string", "null"],
+          "maxLength": 1000
+        },
+        "exclusionReason": {
+          "type": ["string", "null"],
+          "maxLength": 500
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "applicable": { "const": true }
+            },
+            "required": ["applicable"]
+          },
+          "then": {
+            "properties": {
+              "score": { "type": "integer", "minimum": 0 },
+              "maxScore": { "type": "integer", "minimum": 1 },
+              "feedback": { "type": "string", "minLength": 1 },
+              "exclusionReason": { "type": "null" }
+            }
+          },
+          "else": {
+            "properties": {
+              "score": { "type": "null" },
+              "maxScore": { "const": 0 },
+              "feedback": { "type": "null" },
+              "exclusionReason": { "type": "string", "minLength": 1 }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

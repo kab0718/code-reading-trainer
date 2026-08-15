@@ -2,7 +2,7 @@
 
 GitHub上のPythonコードを読み、その処理内容を自分の言葉で説明することで、コードリーディング力を鍛えるChrome拡張です。
 
-現在は企画・初期設計段階です。プロダクトの狙い、MVP、学習体験、評価方針は [`docs/product-overview.md`](docs/product-overview.md)、今後の作業手順と完了条件は [`docs/implementation-plan.md`](docs/implementation-plan.md) にまとめています。
+現在は企画・初期設計段階です。プロダクトの狙い、MVP、学習体験、評価方針は [`docs/product-overview.md`](docs/product-overview.md)、評価の配点とAPI契約は [`docs/evaluation-api-contract.md`](docs/evaluation-api-contract.md)、今後の作業手順と完了条件は [`docs/implementation-plan.md`](docs/implementation-plan.md) にまとめています。
 
 ## 想定する体験
 
@@ -19,8 +19,14 @@ GitHub上のPythonコードを読み、その処理内容を自分の言葉で�
 ```text
 code-reading-trainer/
 ├── docs/
+│   ├── evaluation-api-contract.md
 │   ├── implementation-plan.md
 │   └── product-overview.md
+├── contracts/evaluation/v1/
+│   ├── evaluation-error.schema.json
+│   ├── evaluation-request.schema.json
+│   ├── evaluation-response.schema.json
+│   └── examples/
 ├── src/
 │   ├── background.js
 │   ├── content.js

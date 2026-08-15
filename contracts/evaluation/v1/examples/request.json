@@ -1,0 +1,6 @@
+{
+  "language": "python",
+  "sourceUrl": "https://github.com/example/project/blob/main/parser.py",
+  "code": "def normalize_name(name):\n    return name.strip().lower()",
+  "explanation": "名前の前後の空白を除去し、小文字に統一して返す関数です。"
+}
