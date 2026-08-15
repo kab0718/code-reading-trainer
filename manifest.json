@@ -1,0 +1,24 @@
+{
+  "manifest_version": 3,
+  "name": "Code Reading Trainer",
+  "description": "GitHub上のコードを読み、自分の言葉で説明するトレーニングを支援します。",
+  "version": "0.1.0",
+  "permissions": ["sidePanel", "storage", "activeTab"],
+  "host_permissions": ["https://github.com/*"],
+  "background": {
+    "service_worker": "src/background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://github.com/*"],
+      "js": ["src/content.js"]
+    }
+  ],
+  "action": {
+    "default_title": "Code Reading Trainerを開く"
+  },
+  "side_panel": {
+    "default_path": "src/sidepanel.html"
+  }
+}
+

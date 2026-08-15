@@ -1,0 +1,90 @@
+:root {
+  color-scheme: light;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #18201b;
+  background: #f5f5ef;
+}
+
+body {
+  margin: 0;
+}
+
+main {
+  padding: 24px 18px 40px;
+}
+
+.eyebrow {
+  margin: 0 0 12px;
+  color: #48715a;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
+
+h1 {
+  margin: 0;
+  font-size: 28px;
+  line-height: 1.25;
+}
+
+h2 {
+  margin-top: 28px;
+  font-size: 15px;
+}
+
+.status {
+  color: #58605a;
+  line-height: 1.6;
+}
+
+button,
+textarea {
+  box-sizing: border-box;
+  width: 100%;
+  font: inherit;
+}
+
+button {
+  margin-top: 8px;
+  padding: 11px 14px;
+  border: 1px solid #315a40;
+  border-radius: 8px;
+  color: #fff;
+  background: #315a40;
+  cursor: pointer;
+}
+
+button:disabled {
+  border-color: #c9cec9;
+  color: #7d847f;
+  background: #e2e5e2;
+  cursor: not-allowed;
+}
+
+pre {
+  max-height: 220px;
+  overflow: auto;
+  padding: 12px;
+  border: 1px solid #d8ddd8;
+  border-radius: 8px;
+  background: #fff;
+  font-size: 12px;
+  white-space: pre-wrap;
+}
+
+label {
+  display: block;
+  margin: 18px 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+textarea {
+  padding: 12px;
+  border: 1px solid #bdc5be;
+  border-radius: 8px;
+  resize: vertical;
+  background: #fff;
+  line-height: 1.5;
+}
