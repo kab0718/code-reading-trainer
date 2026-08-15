@@ -37,16 +37,15 @@ Code Reading TrainerのMVPを、動作確認可能な小さな単位に分けて
 
 ## 4. フェーズ0: 実装前の仕様確定
 
+評価軸の配点、再配分、評価APIの入出力・入力上限・エラー・タイムアウトは、[評価仕様・API契約 v1](evaluation-api-contract.md) で確定済みとする。クライアントとAPIは `contracts/evaluation/v1/` のJSON Schemaを共通利用する。
+
 ### 作業
 
-- 観点別の基本配点を決める
-- 対象外の評価軸を除外した場合の再配分ルールを決める
 - 評価APIの配置先と実装方式を決める
 - APIの利用者認証と利用回数制限を決める
 - コード、回答、採点結果を保存するか決める
 - AIへコードと回答を送信することの表示方法を決める
 - Pythonファイルであることの判定方法を決める
-- 1回のトレーニングで扱えるコード量と回答文字数の上限を決める
 
 ### 推奨する初期方針
 
@@ -104,7 +103,9 @@ Code Reading TrainerのMVPを、動作確認可能な小さな単位に分けて
 7. タイムアウト、回数制限、モデルエラーを処理する
 8. URLや回答内容など、不要な情報をログへ残さないようにする
 
-### 評価APIのデータ契約案
+### 評価APIのデータ契約
+
+実装時は [評価仕様・API契約 v1](evaluation-api-contract.md) と `contracts/evaluation/v1/` を正本とする。以下は主要フィールドの概要である。
 
 リクエスト:
 
@@ -121,28 +122,36 @@ Code Reading TrainerのMVPを、動作確認可能な小さな単位に分けて
 
 ```json
 {
+  "requestId": "4fd0d833-6bad-4d6e-b2e2-7fd9ba73710b",
+  "contractVersion": "1.0",
   "totalScore": 78,
   "criteria": [
     {
       "id": "purpose",
       "label": "目的・責務",
+      "applicable": true,
+      "baseWeight": 25,
       "score": 20,
       "maxScore": 25,
-      "feedback": "処理の目的を説明できています。"
+      "feedback": "処理の目的を説明できています。",
+      "exclusionReason": null
     }
   ],
   "strengths": ["入力を検証している点を説明できています。"],
   "gaps": ["例外が発生する条件の説明がありません。"],
-  "modelAnswer": "この関数は..."
+  "modelAnswer": "この関数は...",
+  "evaluatedAt": "2026-08-15T12:00:00Z"
 }
 ```
+
+`criteria` は概要を示すため1件だけ記載している。実際のレスポンスは6軸を固定順で返す。
 
 ### API側で保証すること
 
 - `totalScore` は0以上100以下の整数
 - `score` は0以上 `maxScore` 以下
 - 採点対象となる `maxScore` の合計は100
-- `criteria` には対象コードに存在する評価軸だけを含める
+- `criteria` には6軸を固定順で含め、対象外軸は `applicable: false` として明示する
 - `modelAnswer` はコードから判断できない事実を断定しない
 - 模範解答は採点処理が完了するまでクライアントへ返さない
 
@@ -267,7 +276,7 @@ Code Reading TrainerのMVPを、動作確認可能な小さな単位に分けて
 
 ## 11. 実装単位のチェックリスト
 
-- [ ] 評価軸の配点とAPI契約を確定する
+- [x] 評価軸の配点とAPI契約を確定する
 - [ ] Pythonファイル判定を実装する
 - [ ] 自由トレーニングの入力検証を実装する
 - [ ] 回答送信と画面状態管理を実装する
@@ -290,4 +299,3 @@ Code Reading TrainerのMVPを、動作確認可能な小さな単位に分けて
 - 採点基準の調整と評価の安定性改善
 - 対応言語の追加
 - VS Code拡張とのデータモデル共通化
-

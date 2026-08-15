@@ -1,0 +1,15 @@
+{
+  "requestId": "d877eb02-05a7-4d4d-a049-026fb3469e2f",
+  "contractVersion": "1.0",
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "リクエストの入力値を確認してください。",
+    "details": [
+      {
+        "field": "explanation",
+        "reason": "1文字以上で入力してください。"
+      }
+    ],
+    "retryable": false
+  }
+}

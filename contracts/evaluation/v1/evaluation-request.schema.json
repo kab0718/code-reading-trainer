@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://code-reading-trainer.example/contracts/evaluation/v1/evaluation-request.schema.json",
+  "title": "EvaluationRequestV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["language", "sourceUrl", "code", "explanation"],
+  "properties": {
+    "language": {
+      "const": "python"
+    },
+    "sourceUrl": {
+      "type": "string",
+      "format": "uri",
+      "maxLength": 2048,
+      "pattern": "^https://github\\.com/[^/]+/[^/]+/blob/.+\\.py(?:[?#].*)?$"
+    },
+    "code": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 30000,
+      "pattern": ".*\\S.*"
+    },
+    "explanation": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 5000,
+      "pattern": ".*\\S.*"
+    }
+  }
+}

@@ -1,0 +1,75 @@
+{
+  "requestId": "4fd0d833-6bad-4d6e-b2e2-7fd9ba73710b",
+  "contractVersion": "1.0",
+  "totalScore": 88,
+  "criteria": [
+    {
+      "id": "purpose",
+      "label": "目的・責務",
+      "applicable": true,
+      "baseWeight": 25,
+      "score": 34,
+      "maxScore": 34,
+      "feedback": "文字列を正規化する目的を説明できています。",
+      "exclusionReason": null
+    },
+    {
+      "id": "inputs_outputs",
+      "label": "入出力",
+      "applicable": true,
+      "baseWeight": 15,
+      "score": 14,
+      "maxScore": 20,
+      "feedback": "文字列を返すことは説明できています。",
+      "exclusionReason": null
+    },
+    {
+      "id": "main_flow",
+      "label": "主要処理",
+      "applicable": true,
+      "baseWeight": 25,
+      "score": 33,
+      "maxScore": 33,
+      "feedback": "空白除去後に小文字化する流れを説明できています。",
+      "exclusionReason": null
+    },
+    {
+      "id": "branches_errors",
+      "label": "分岐・例外",
+      "applicable": false,
+      "baseWeight": 15,
+      "score": null,
+      "maxScore": 0,
+      "feedback": null,
+      "exclusionReason": "対象コードに分岐や例外処理がありません。"
+    },
+    {
+      "id": "side_effects",
+      "label": "副作用",
+      "applicable": false,
+      "baseWeight": 10,
+      "score": null,
+      "maxScore": 0,
+      "feedback": null,
+      "exclusionReason": "対象コードに外部状態への変更がありません。"
+    },
+    {
+      "id": "assumptions_dependencies",
+      "label": "前提・依存",
+      "applicable": true,
+      "baseWeight": 10,
+      "score": 7,
+      "maxScore": 13,
+      "feedback": "入力が文字列である前提への説明が不足しています。",
+      "exclusionReason": null
+    }
+  ],
+  "strengths": [
+    "空白除去と小文字化の両方を説明できています。"
+  ],
+  "gaps": [
+    "入力が文字列である前提への言及がありません。"
+  ],
+  "modelAnswer": "文字列を受け取り、前後の空白を除去してから小文字へ変換し、その結果を返します。入力にはstripとlowerを利用できる文字列を前提とします。",
+  "evaluatedAt": "2026-08-15T12:00:00Z"
+}
