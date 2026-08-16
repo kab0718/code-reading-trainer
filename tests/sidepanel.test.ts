@@ -5,11 +5,11 @@ import { test } from "node:test";
 import vm from "node:vm";
 
 const sidepanelSource = await readFile(
-  path.join(process.cwd(), "src/sidepanel.js"),
+  path.join(process.cwd(), "dist/extension/src/sidepanel.js"),
   "utf8",
 );
 const inputValidationSource = await readFile(
-  path.join(process.cwd(), "src/input-validation.js"),
+  path.join(process.cwd(), "dist/extension/src/input-validation.js"),
   "utf8",
 );
 
@@ -29,7 +29,19 @@ function createSidepanelEnvironment() {
   let currentContext = eligibleContext("first.py");
   let runtimeListener;
   const listeners = new Map();
-  const createElement = (selector, properties = {}) => ({
+  interface MockElement {
+    [key: string]: unknown;
+    disabled?: boolean;
+    hidden?: boolean;
+    textContent?: string;
+    value?: string;
+    addEventListener(type: string, listener: unknown): void;
+    setAttribute(name: string, value: string): void;
+  }
+  const createElement = (
+    selector: string,
+    properties: Partial<MockElement> = {},
+  ): MockElement => ({
     ...properties,
     addEventListener(type, listener) {
       listeners.set(`${selector}:${type}`, listener);
@@ -38,7 +50,7 @@ function createSidepanelEnvironment() {
       this[name] = value;
     },
   });
-  const elements = {
+  const elements: Record<string, MockElement> = {
     "#status": createElement("#status", { textContent: "" }),
     "#selection-button": createElement("#selection-button", {
       disabled: false,

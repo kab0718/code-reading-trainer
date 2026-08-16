@@ -1,4 +1,4 @@
-(function initializePageContext(globalObject) {
+(function initializePageContext(globalObject: typeof globalThis) {
   const PAGE_STATUS = Object.freeze({
     ELIGIBLE: "eligible",
     UNSUPPORTED: "unsupported",
@@ -14,7 +14,11 @@
     PAGE_DATA_UNAVAILABLE: "page-data-unavailable",
   });
 
-  function unsupported(url, reason, details = {}) {
+  function unsupported(
+    url: string,
+    reason: UnsupportedReason,
+    details: Partial<PageDetails> = {},
+  ): UnsupportedPageContext {
     return {
       status: PAGE_STATUS.UNSUPPORTED,
       reason,
@@ -25,7 +29,7 @@
     };
   }
 
-  function decodePathSegments(pathname) {
+  function decodePathSegments(pathname: string): string[] | null {
     try {
       return pathname
         .split("/")
@@ -36,21 +40,36 @@
     }
   }
 
-  function readEmbeddedDetails(embeddedData) {
-    const payload = embeddedData?.payload;
-    if (!payload || typeof payload !== "object") {
+  function isRecord(value: unknown): value is Record<string, unknown> {
+    return value !== null && typeof value === "object";
+  }
+
+  function readEmbeddedDetails(embeddedData: unknown): EmbeddedDetails {
+    if (!isRecord(embeddedData) || !isRecord(embeddedData.payload)) {
       return {};
     }
 
-    const blobRoute = payload.codeViewBlobLayoutRoute;
-    const layoutRoute = payload.codeViewLayoutRoute;
+    const payload = embeddedData.payload;
+    const blobRoute = isRecord(payload.codeViewBlobLayoutRoute)
+      ? payload.codeViewBlobLayoutRoute
+      : undefined;
+    const layoutRoute = isRecord(payload.codeViewLayoutRoute)
+      ? payload.codeViewLayoutRoute
+      : undefined;
+    const blobRefInfo = isRecord(blobRoute?.refInfo)
+      ? blobRoute.refInfo
+      : undefined;
+    const layoutRefInfo = isRecord(layoutRoute?.refInfo)
+      ? layoutRoute.refInfo
+      : undefined;
+    const repo = isRecord(layoutRoute?.repo) ? layoutRoute.repo : undefined;
     const path = blobRoute?.path ?? layoutRoute?.path;
-    const ref = blobRoute?.refInfo?.name ?? layoutRoute?.refInfo?.name;
+    const ref = blobRefInfo?.name ?? layoutRefInfo?.name;
     const repository =
-      layoutRoute?.repo?.ownerLogin && layoutRoute?.repo?.name
-        ? `${layoutRoute.repo.ownerLogin}/${layoutRoute.repo.name}`
+      typeof repo?.ownerLogin === "string" && typeof repo.name === "string"
+        ? `${repo.ownerLogin}/${repo.name}`
         : undefined;
-    const repositoryPublic = layoutRoute?.repo?.public;
+    const repositoryPublic = repo?.public;
 
     return {
       path: typeof path === "string" ? path : undefined,
@@ -61,7 +80,10 @@
     };
   }
 
-  function normalizeVisibility(repositoryPublic, embeddedDetails) {
+  function normalizeVisibility(
+    repositoryPublic: boolean | string | undefined,
+    embeddedDetails: EmbeddedDetails,
+  ) {
     const metaVisibility =
       repositoryPublic === "true" || repositoryPublic === true
         ? true
@@ -80,7 +102,10 @@
     };
   }
 
-  function resolveRefAndPath(blobSegments, embeddedDetails) {
+  function resolveRefAndPath(
+    blobSegments: string[],
+    embeddedDetails: EmbeddedDetails,
+  ): { path: string; ref: string } | null {
     if (!embeddedDetails.ref || !embeddedDetails.path) {
       return null;
     }
@@ -101,7 +126,7 @@
     repositoryNwo,
     repositoryPublic,
     embeddedData,
-  }) {
+  }: AnalyzeGitHubPageInput): AnalyzedPageContext {
     let parsedUrl;
     try {
       parsedUrl = new URL(url);

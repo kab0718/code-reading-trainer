@@ -5,7 +5,7 @@ import { test } from "node:test";
 import vm from "node:vm";
 
 const source = await readFile(
-  path.join(process.cwd(), "src/input-validation.js"),
+  path.join(process.cwd(), "dist/extension/src/input-validation.js"),
   "utf8",
 );
 

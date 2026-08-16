@@ -1,0 +1,9 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noImplicitAny": false,
+    "noUncheckedIndexedAccess": false,
+    "strictNullChecks": false
+  },
+  "include": ["api/**/*.ts", "src/**/*.ts", "tests/**/*.ts"]
+}

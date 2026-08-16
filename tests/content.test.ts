@@ -6,11 +6,11 @@ import vm from "node:vm";
 
 const projectRoot = process.cwd();
 const pageContextSource = await readFile(
-  path.join(projectRoot, "src/page-context.js"),
+  path.join(projectRoot, "dist/extension/src/page-context.js"),
   "utf8",
 );
 const contentSource = await readFile(
-  path.join(projectRoot, "src/content.js"),
+  path.join(projectRoot, "dist/extension/src/content.js"),
   "utf8",
 );
 

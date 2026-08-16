@@ -11,13 +11,55 @@ export const CRITERIA = Object.freeze([
     label: "前提・依存",
     baseWeight: 10,
   },
-]);
+] as const);
 
-function isPlainObject(value) {
+export type CriterionId = (typeof CRITERIA)[number]["id"];
+
+export interface ModelCriterion {
+  applicable: boolean;
+  exclusionReason: string | null;
+  feedback: string | null;
+  id: CriterionId;
+  percentageScore: number;
+}
+
+export interface ModelEvaluation {
+  criteria: ModelCriterion[];
+  gaps: string[];
+  modelAnswer: string;
+  strengths: string[];
+}
+
+export interface EvaluationCriterion {
+  applicable: boolean;
+  baseWeight: number;
+  exclusionReason: string | null;
+  feedback: string | null;
+  id: CriterionId;
+  label: string;
+  maxScore: number;
+  score: number | null;
+}
+
+export interface EvaluationResponse {
+  contractVersion: string;
+  criteria: EvaluationCriterion[];
+  evaluatedAt: string;
+  gaps: string[];
+  modelAnswer: string;
+  requestId: string;
+  strengths: string[];
+  totalScore: number;
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-function hasExactKeys(value, keys) {
+function hasExactKeys(
+  value: Record<string, unknown>,
+  keys: readonly string[],
+): boolean {
   const actualKeys = Object.keys(value).sort();
   const expectedKeys = [...keys].sort();
 
@@ -27,7 +69,11 @@ function hasExactKeys(value, keys) {
   );
 }
 
-function isBoundedText(value, maximum, nullable = false) {
+function isBoundedText(
+  value: unknown,
+  maximum: number,
+  nullable = false,
+): value is string | null {
   if (nullable && value === null) {
     return true;
   }
@@ -39,7 +85,7 @@ function isBoundedText(value, maximum, nullable = false) {
   );
 }
 
-function isTextList(value) {
+function isTextList(value: unknown): value is string[] {
   return (
     Array.isArray(value) &&
     value.length <= 5 &&
@@ -47,7 +93,9 @@ function isTextList(value) {
   );
 }
 
-export function validateModelEvaluation(value) {
+export function validateModelEvaluation(
+  value: unknown,
+): value is ModelEvaluation {
   if (
     !isPlainObject(value) ||
     !hasExactKeys(value, ["criteria", "strengths", "gaps", "modelAnswer"])
@@ -68,7 +116,9 @@ export function validateModelEvaluation(value) {
   let applicableCount = 0;
 
   for (const [index, criterion] of value.criteria.entries()) {
+    const definition = CRITERIA[index];
     if (
+      !definition ||
       !isPlainObject(criterion) ||
       !hasExactKeys(criterion, [
         "id",
@@ -77,8 +127,9 @@ export function validateModelEvaluation(value) {
         "feedback",
         "exclusionReason",
       ]) ||
-      criterion.id !== CRITERIA[index].id ||
+      criterion.id !== definition.id ||
       typeof criterion.applicable !== "boolean" ||
+      typeof criterion.percentageScore !== "number" ||
       !Number.isInteger(criterion.percentageScore) ||
       criterion.percentageScore < 0 ||
       criterion.percentageScore > 100
@@ -106,7 +157,9 @@ export function validateModelEvaluation(value) {
   return applicableCount > 0;
 }
 
-export function allocateMaximumScores(applicableIds) {
+export function allocateMaximumScores(
+  applicableIds: ReadonlySet<CriterionId>,
+): Map<CriterionId, number> {
   const applicable = CRITERIA.filter(({ id }) => applicableIds.has(id));
   const weightSum = applicable.reduce(
     (sum, criterion) => sum + criterion.baseWeight,
@@ -133,17 +186,17 @@ export function allocateMaximumScores(applicableIds) {
   );
 
   for (let index = 0; index < 100 - allocated; index += 1) {
-    remainderOrder[index].maximum += 1;
+    remainderOrder[index]!.maximum += 1;
   }
 
   return new Map(allocations.map(({ id, maximum }) => [id, maximum]));
 }
 
 export function buildEvaluationResponse(
-  modelEvaluation,
-  requestId,
+  modelEvaluation: unknown,
+  requestId: string,
   now = new Date(),
-) {
+): EvaluationResponse {
   if (!validateModelEvaluation(modelEvaluation)) {
     throw new Error(
       "The model evaluation does not satisfy the expected schema.",
@@ -157,7 +210,7 @@ export function buildEvaluationResponse(
   );
   const maximumScores = allocateMaximumScores(applicableIds);
   const criteria = CRITERIA.map((definition, index) => {
-    const modelCriterion = modelEvaluation.criteria[index];
+    const modelCriterion = modelEvaluation.criteria[index]!;
 
     if (!modelCriterion.applicable) {
       return {
@@ -170,7 +223,7 @@ export function buildEvaluationResponse(
       };
     }
 
-    const maxScore = maximumScores.get(definition.id);
+    const maxScore = maximumScores.get(definition.id)!;
     return {
       ...definition,
       applicable: true,
