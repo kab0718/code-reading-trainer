@@ -6,7 +6,11 @@ import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
 
 import { CRITERIA } from "../api/evaluation.mjs";
-import { ModelResponseError, ModelTimeoutError } from "../api/openai.mjs";
+import {
+  ModelQuotaError,
+  ModelResponseError,
+  ModelTimeoutError,
+} from "../api/workers-ai.mjs";
 import { createWorker } from "../api/worker.mjs";
 
 const [requestSchema, responseSchema, errorSchema] = await Promise.all(
@@ -216,6 +220,19 @@ test("モデルのタイムアウトを504へ変換する", async () => {
   await expectContractError(response, 504, "EVALUATION_TIMEOUT");
 });
 
+test("Workers AI無料割当超過をUTC日次リセットまでの429へ変換する", async () => {
+  const worker = createTestWorker({
+    evaluate: async () => {
+      throw new ModelQuotaError();
+    },
+  });
+  const response = await worker.fetch(createRequest(), createEnvironment());
+
+  const body = await expectContractError(response, 429, "RATE_LIMITED");
+  assert.equal(response.headers.get("Retry-After"), "86400");
+  assert.equal(body.error.retryAfterSeconds, 86400);
+});
+
 test("body読取や外部処理を含むAPI全体の期限超過を504へ変換する", async () => {
   let deadlineCallback;
   let notifyEvaluationStarted;
@@ -224,7 +241,7 @@ test("body読取や外部処理を含むAPI全体の期限超過を504へ変換�
     notifyEvaluationStarted = resolve;
   });
   const worker = createTestWorker({
-    evaluate: async (_input, _env, _fetch, deadlineSignal) => {
+    evaluate: async (_input, _env, deadlineSignal) => {
       receivedDeadlineSignal = deadlineSignal;
       notifyEvaluationStarted();
       return new Promise(() => {});

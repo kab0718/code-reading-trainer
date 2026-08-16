@@ -1,6 +1,5 @@
 import { CRITERIA, validateModelEvaluation } from "./evaluation.mjs";
 
-const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
 const MODEL_TIMEOUT_MS = 20_000;
 
 const criterionSchema = {
@@ -56,35 +55,38 @@ criteriaは指定された6軸を固定順で1回ずつ返してください。�
 
 export class ModelTimeoutError extends Error {}
 export class ModelResponseError extends Error {}
+export class ModelQuotaError extends Error {}
 
 function extractOutputText(response) {
-  if (typeof response.output_text === "string") {
+  if (typeof response?.response === "string") {
+    return response.response;
+  }
+  if (typeof response?.output_text === "string") {
     return response.output_text;
   }
 
-  if (!Array.isArray(response.output)) {
-    return null;
-  }
-
-  const text = response.output
-    .flatMap((item) => (Array.isArray(item.content) ? item.content : []))
-    .filter(
-      (item) => item.type === "output_text" && typeof item.text === "string",
-    )
-    .map((item) => item.text)
-    .join("");
-
-  return text || null;
+  const content = response?.choices?.[0]?.message?.content;
+  return typeof content === "string" ? content : null;
 }
 
-export async function evaluateWithOpenAI(
+function isFreeAllocationError(error) {
+  const code = String(error?.code ?? "");
+  const message = String(error?.message ?? "").toLowerCase();
+
+  return (
+    code === "3036" ||
+    message.includes("daily free allocation") ||
+    message.includes("account limited")
+  );
+}
+
+export async function evaluateWithWorkersAI(
   input,
   env,
-  fetchImplementation = fetch,
   deadlineSignal,
   options = {},
 ) {
-  if (!env.OPENAI_API_KEY || !env.OPENAI_MODEL) {
+  if (!env.AI || typeof env.AI.run !== "function" || !env.AI_MODEL) {
     throw new ModelResponseError("The model service is not configured.");
   }
 
@@ -100,17 +102,10 @@ export async function evaluateWithOpenAI(
     : controller.signal;
 
   try {
-    const response = await fetchImplementation(OPENAI_RESPONSES_URL, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${env.OPENAI_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: env.OPENAI_MODEL,
-        store: false,
-        max_output_tokens: 4000,
-        input: [
+    const response = await env.AI.run(
+      env.AI_MODEL,
+      {
+        messages: [
           { role: "system", content: SYSTEM_PROMPT },
           {
             role: "user",
@@ -121,28 +116,24 @@ export async function evaluateWithOpenAI(
             }),
           },
         ],
-        text: {
-          format: {
-            type: "json_schema",
+        max_tokens: 4000,
+        temperature: 0,
+        response_format: {
+          type: "json_schema",
+          json_schema: {
             name: "code_reading_evaluation_v1",
             strict: true,
             schema: MODEL_OUTPUT_SCHEMA,
           },
         },
-      }),
-      signal,
-    });
+      },
+      {
+        signal,
+        tags: ["code-reading-trainer:evaluation"],
+      },
+    );
 
-    if (!response.ok) {
-      throw new ModelResponseError("The model service returned an error.");
-    }
-
-    const payload = await response.json();
-    if (payload.status && payload.status !== "completed") {
-      throw new ModelResponseError("The model response was incomplete.");
-    }
-
-    const outputText = extractOutputText(payload);
+    const outputText = extractOutputText(response);
     if (!outputText) {
       throw new ModelResponseError(
         "The model response did not contain output.",
@@ -162,11 +153,14 @@ export async function evaluateWithOpenAI(
 
     return evaluation;
   } catch (error) {
-    if (error?.name === "AbortError") {
+    if (signal.aborted || error?.name === "AbortError") {
       throw new ModelTimeoutError("The model request timed out.");
     }
     if (error instanceof ModelResponseError) {
       throw error;
+    }
+    if (isFreeAllocationError(error)) {
+      throw new ModelQuotaError("The Workers AI free allocation was used up.");
     }
     throw new ModelResponseError("The model request failed.");
   } finally {

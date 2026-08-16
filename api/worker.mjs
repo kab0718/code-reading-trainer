@@ -1,9 +1,10 @@
 import { buildEvaluationResponse, CONTRACT_VERSION } from "./evaluation.mjs";
 import {
-  evaluateWithOpenAI,
+  evaluateWithWorkersAI,
+  ModelQuotaError,
   ModelResponseError,
   ModelTimeoutError,
-} from "./openai.mjs";
+} from "./workers-ai.mjs";
 
 const MAX_BODY_BYTES = 64 * 1024;
 const API_TIMEOUT_MS = 25_000;
@@ -385,9 +386,19 @@ async function enforceRateLimit(request, origin, env) {
   }
 }
 
+function secondsUntilNextUtcDay(now) {
+  const nextReset = Date.UTC(
+    now.getUTCFullYear(),
+    now.getUTCMonth(),
+    now.getUTCDate() + 1,
+  );
+
+  return Math.max(1, Math.ceil((nextReset - now.getTime()) / 1000));
+}
+
 export function createWorker(options = {}) {
   const fetchImplementation = options.fetch ?? fetch;
-  const evaluate = options.evaluate ?? evaluateWithOpenAI;
+  const evaluate = options.evaluate ?? evaluateWithWorkersAI;
   const now = options.now ?? (() => new Date());
   const randomUUID = options.randomUUID ?? (() => crypto.randomUUID());
   const apiTimeoutMs = options.apiTimeoutMs ?? API_TIMEOUT_MS;
@@ -455,10 +466,14 @@ export function createWorker(options = {}) {
               modelEvaluation = await evaluate(
                 input,
                 env,
-                fetchImplementation,
                 deadlineController.signal,
               );
             } catch (error) {
+              if (error instanceof ModelQuotaError) {
+                throw new ApiError("RATE_LIMITED", [], {
+                  retryAfterSeconds: secondsUntilNextUtcDay(now()),
+                });
+              }
               if (error instanceof ModelTimeoutError) {
                 throw new ApiError("EVALUATION_TIMEOUT");
               }

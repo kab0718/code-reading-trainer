@@ -25,7 +25,7 @@ code-reading-trainer/
 │   └── product-overview.md
 ├── api/
 │   ├── evaluation.mjs
-│   ├── openai.mjs
+│   ├── workers-ai.mjs
 │   └── worker.mjs
 ├── contracts/evaluation/v1/
 │   ├── evaluation-error.schema.json

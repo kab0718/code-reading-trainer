@@ -4,8 +4,11 @@
   "main": "api/worker.mjs",
   "compatibility_date": "2026-08-16",
   "workers_dev": true,
+  "ai": {
+    "binding": "AI",
+  },
   "vars": {
-    "OPENAI_MODEL": "gpt-5-mini",
+    "AI_MODEL": "@cf/openai/gpt-oss-20b",
     "ALLOWED_EXTENSION_IDS": "",
     "ALLOW_MISSING_ORIGIN": "false",
   },
