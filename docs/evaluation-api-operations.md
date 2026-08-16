@@ -30,7 +30,18 @@
 
 ## ローカル実行
 
-Node.js 24を使用する。`npx wrangler login` でCloudflareへログインし、開発用の変数ファイルを作成してからWorkerを起動する。Workers AI bindingの推論はローカル実行時もCloudflareの利用量へ計上される。
+### 1. Cloudflareの準備
+
+1. Cloudflareアカウントを用意し、Workers FreeプランとWorkers AIを利用できることをDashboardで確認する。
+2. Node.js 24で依存関係をインストールする。
+3. `npx wrangler login` で対象アカウントへログインし、`npx wrangler whoami` でアカウントを確認する。
+4. Workers AIの有料プランや別の有料AIサービスは設定しない。MVPでは無料割当を超えたら429を返し、翌日のリセットを待つ。
+
+複数のCloudflareアカウントへ参加している場合は、デプロイ前にも`wrangler whoami`のAccount IDを確認する。誤ったアカウントへのデプロイを避けるため、確認したAccount IDとWorker名を作業記録へ残す。
+
+### 2. ローカル確認
+
+開発用の変数ファイルを作成し、実際に読み込んだChrome拡張機能のIDを`ALLOWED_EXTENSION_IDS`へ設定してからWorkerを起動する。複数のIDを許可するときはカンマ区切りで指定する。Workers AI bindingの推論はローカル実行時もCloudflareの利用量へ計上される。
 
 ```sh
 cp .dev.vars.example .dev.vars
@@ -47,13 +58,50 @@ npm run check
 
 ## デプロイ
 
-初回デプロイ前に、`wrangler.jsonc` の `ALLOWED_EXTENSION_IDS` を公開する拡張機能IDへ変更する。Workers AIはWorkerの`AI` bindingから呼び出すため、外部AIサービスのAPIキー登録は不要である。
+### 3. 本番設定の確認
+
+初回デプロイ前に、次を確認する。
+
+- `wrangler.jsonc` のWorker名が `code-reading-trainer-evaluation-api` である
+- `ai.binding` が `AI`、`AI_MODEL` が採用モデルになっている
+- `ALLOWED_EXTENSION_IDS` が公開する拡張機能IDで、空文字や開発用IDのままではない
+- `ALLOW_MISSING_ORIGIN` が `false` である
+- `RATE_LIMITER` の `namespace_id` が他用途と意図せず共有されておらず、10回/60秒になっている
+- `observability` が有効で、コード、回答、source URL、モデルの生レスポンスをログへ出す処理がない
+- `npm run check` が成功し、`dist/api` のdry-run bundleに秘密情報が含まれていない
+
+Workers AIはWorkerの`AI` bindingから呼び出すため、外部AIサービスのAPIキーやCloudflare API TokenをWorker Secretへ登録する必要はない。Wranglerのログイン情報もリポジトリやWorker環境変数へ保存しない。
+
+### 4. デプロイとURLの反映
 
 ```sh
 npx wrangler deploy
 ```
 
+コマンドが出力した`workers.dev` URLを記録し、拡張機能の評価APIエンドポイントと接続許可先へ反映する。カスタムドメインを使う場合は、Cloudflare側のRoute設定後に同じ確認を行う。
+
 `ALLOWED_EXTENSION_IDS` が空の場合、評価リクエストは `401 UNAUTHORIZED` になる。`ALLOW_MISSING_ORIGIN=true` はCLIなど信頼済みクライアントを使うローカル検証専用とし、本番では有効にしない。
+
+### 5. デプロイ後の疎通確認
+
+本番URLに対して次を確認し、HTTP status、`requestId`、実施時刻だけを作業記録へ残す。コードや回答の本文は記録しない。
+
+1. 公開GitHub上の短いPythonコードと妥当な回答で`POST /v1/evaluations`が200を返す。
+2. レスポンスがv1 Schemaに適合し、6評価軸、100点満点、模範解答を含む。
+3. 許可した拡張機能OriginへのCORS headerが返る。
+4. 未許可Originが401、壊れた入力、Python以外、非公開URLが400になる。
+5. AI推論へ到達しない公開元URLエラーのリクエストを同一IPから続け、11回目が429になって`Retry-After`が返る。回数制限の確認でNeuronを消費しない。
+6. 拡張機能から実際に1回評価し、送信中、成功、エラー時の回答保持を確認する。
+
+正常系のAI推論は無料割当を消費するため、定型の短いサンプルで必要最小限だけ実行する。
+
+### 6. 監視とロールバック
+
+- Cloudflare DashboardでWorkers AIのNeuron使用量を日次確認し、10,000 Neurons/日に近づいたら追加の手動検証を止める。
+- WorkerのObservabilityで4xx、5xx、タイムアウト、429の増加を確認する。ログ本文へ利用者のコードや回答を追加しない。
+- 一般公開前にCloudflare WAFで、想定外のHTTPメソッドや明らかな大量アクセスを抑止するルールを設定する。
+- 障害時は`npx wrangler deployments`で直前の正常なversionを確認し、Cloudflare Dashboardまたは`npx wrangler rollback <version-id>`で戻す。
+- ロールバック後も正常系1件と未許可Originの疎通確認を行う。
 
 Rate Limiting bindingはCloudflareの仕様上、低遅延を優先したeventually consistentな制限である。厳密な課金上限やユーザー単位の利用枠が必要になった場合は、利用者認証とDurable Objects等による強整合なカウンターへ移行する。
 
