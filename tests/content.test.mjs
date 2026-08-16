@@ -40,6 +40,7 @@ function createContentEnvironment() {
   let messageListener;
   let observerCallback;
   let currentEmbeddedData = embeddedData("main", "Lib/abc.py");
+  let currentSelection = "def example():\n    pass";
   const timers = [];
   const sentMessages = [];
 
@@ -85,7 +86,7 @@ function createContentEnvironment() {
       addEventListener() {},
       clearTimeout() {},
       getSelection() {
-        return { toString: () => "def example():\n    pass" };
+        return { toString: () => currentSelection };
       },
       setTimeout(callback) {
         timers.push(callback);
@@ -121,6 +122,9 @@ function createContentEnvironment() {
       currentEmbeddedData = embeddedData(ref, filePath);
       observerCallback();
     },
+    setSelection(value) {
+      currentSelection = value;
+    },
     runNextTimer() {
       const callback = timers.shift();
       assert.ok(callback, "実行待ちのタイマーがあること");
@@ -143,6 +147,15 @@ test("GET_PAGE_CONTEXTで対象ページと選択コードを返す", () => {
     title: "abc.py at main · python/cpython",
     selectedText: "def example():\n    pass",
   });
+});
+
+test("選択コードのインデントと末尾改行を保ったまま返す", () => {
+  const environment = createContentEnvironment();
+  const selectedText = "    if ready:\n        run()\n";
+
+  environment.setSelection(selectedText);
+
+  assert.equal(environment.getContext().selectedText, selectedText);
 });
 
 test("SPA遷移では一時状態の後も同じURLを再判定する", () => {

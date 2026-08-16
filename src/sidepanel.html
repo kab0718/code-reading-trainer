@@ -22,7 +22,7 @@
         </button>
       </section>
 
-      <section id="selection" hidden>
+      <form id="selection" hidden novalidate>
         <h2>選択中のコード</h2>
         <pre><code id="selected-code"></code></pre>
         <label for="explanation"
@@ -31,11 +31,15 @@
         <textarea
           id="explanation"
           rows="8"
+          aria-describedby="explanation-count input-error"
           placeholder="目的、主要な処理、分岐や副作用などを説明してみましょう"
         ></textarea>
-        <button type="button" disabled>評価する（準備中）</button>
-      </section>
+        <p id="explanation-count" class="character-count"></p>
+        <p id="input-error" class="input-error" role="alert"></p>
+        <button type="submit" id="evaluation-button" disabled>評価する</button>
+      </form>
     </main>
+    <script src="input-validation.js"></script>
     <script src="sidepanel.js"></script>
   </body>
 </html>

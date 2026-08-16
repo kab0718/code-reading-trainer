@@ -80,6 +80,27 @@ label {
   line-height: 1.5;
 }
 
+textarea[aria-invalid="true"] {
+  border-color: #a73535;
+}
+
+.character-count,
+.input-error {
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.character-count {
+  color: #58605a;
+  text-align: right;
+}
+
+.input-error {
+  min-height: 1.5em;
+  color: #8c2929;
+}
+
 textarea {
   padding: 12px;
   border: 1px solid #bdc5be;
