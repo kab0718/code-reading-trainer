@@ -11,7 +11,7 @@
   "content_scripts": [
     {
       "matches": ["https://github.com/*"],
-      "js": ["src/content.js"]
+      "js": ["src/page-context.js", "src/content.js"]
     }
   ],
   "action": {

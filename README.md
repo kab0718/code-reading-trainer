@@ -44,4 +44,15 @@ code-reading-trainer/
 3. 「パッケージ化されていない拡張機能を読み込む」を選ぶ
 4. このディレクトリを指定する
 
-現時点では、GitHubページで拡張機能を開くとサイドパネルに初期画面が表示されるだけの骨組みです。
+public repositoryのPythonコード表示ページを開くと、URL、repository、ref、ファイルパスを判定し、選択したコードをサイドパネルへ取り込めます。Python以外のファイル、コード表示以外のページ、private repositoryは対象外として案内します。
+
+GitHub内の画面遷移後も表示中のページを再判定します。
+
+## 開発時の確認
+
+Node.js 24を使用します。依存関係をインストールしたあと、単体テストを含む品質チェックを実行してください。
+
+```sh
+npm ci --ignore-scripts
+npm run check
+```
