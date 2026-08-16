@@ -86,13 +86,10 @@ async function validateExecutableFile(relativePath) {
   }
 
   if (relativePath.endsWith(".html")) {
-    const scriptTags = source.matchAll(
-      /<script\b([^>]*)>([\s\S]*?)<\/script>/giu,
-    );
+    const scriptTags = source.matchAll(/<script\b([^>]*)>/giu);
     for (const match of scriptTags) {
       const attributes = match[1];
-      const body = match[2].trim();
-      if (!/\bsrc\s*=/iu.test(attributes) && body.length > 0) {
+      if (!/\bsrc\s*=/iu.test(attributes)) {
         report(`${relativePath} contains an inline script`);
       }
     }

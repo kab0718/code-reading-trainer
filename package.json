@@ -5,8 +5,8 @@
   "description": "A Chrome extension for practicing code reading on GitHub.",
   "scripts": {
     "check": "npm run format:check && npm run lint && npm run validate:extension",
-    "format": "prettier --write \".github/**/*.yml\" \"src/**/*.{js,css,html}\" \"scripts/**/*.mjs\" \"eslint.config.mjs\" \"manifest.json\" \"package.json\" \"package-lock.json\"",
-    "format:check": "prettier --check \".github/**/*.yml\" \"src/**/*.{js,css,html}\" \"scripts/**/*.mjs\" \"eslint.config.mjs\" \"manifest.json\" \"package.json\" \"package-lock.json\"",
+    "format": "prettier --write \".github/**/*.yml\" \"src/**/*.{js,css,html}\" \"scripts/**/*.mjs\" \"AGENTS.md\" \"eslint.config.mjs\" \"manifest.json\" \"package.json\" \"package-lock.json\"",
+    "format:check": "prettier --check \".github/**/*.yml\" \"src/**/*.{js,css,html}\" \"scripts/**/*.mjs\" \"AGENTS.md\" \"eslint.config.mjs\" \"manifest.json\" \"package.json\" \"package-lock.json\"",
     "lint": "eslint . --max-warnings=0",
     "validate:extension": "node scripts/validate-extension.mjs"
   },
