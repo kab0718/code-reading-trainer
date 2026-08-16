@@ -1,0 +1,26 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "code-reading-trainer-evaluation-api",
+  "main": "api/worker.mjs",
+  "compatibility_date": "2026-08-16",
+  "workers_dev": true,
+  "vars": {
+    "OPENAI_MODEL": "gpt-5-mini",
+    "ALLOWED_EXTENSION_IDS": "",
+    "ALLOW_MISSING_ORIGIN": "false",
+  },
+  "ratelimits": [
+    {
+      "name": "RATE_LIMITER",
+      "namespace_id": "1001",
+      "simple": {
+        "limit": 10,
+        "period": 60,
+      },
+    },
+  ],
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1,
+  },
+}

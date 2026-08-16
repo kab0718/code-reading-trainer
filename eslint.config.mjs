@@ -19,11 +19,19 @@ export default defineConfig([
     rules: js.configs.recommended.rules,
   },
   {
-    files: ["scripts/**/*.mjs", "tests/**/*.mjs", "eslint.config.mjs"],
+    files: [
+      "api/**/*.mjs",
+      "scripts/**/*.mjs",
+      "tests/**/*.mjs",
+      "eslint.config.mjs",
+    ],
     languageOptions: {
       ecmaVersion: "latest",
       sourceType: "module",
-      globals: globals.node,
+      globals: {
+        ...globals.node,
+        ...globals.serviceworker,
+      },
     },
     rules: js.configs.recommended.rules,
   },
