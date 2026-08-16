@@ -1,0 +1,2 @@
+ALLOWED_EXTENSION_IDS="replace-with-your-local-extension-id"
+ALLOW_MISSING_ORIGIN="false"

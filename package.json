@@ -4,20 +4,24 @@
   "private": true,
   "description": "A Chrome extension for practicing code reading on GitHub.",
   "scripts": {
-    "check": "npm run format:check && npm run lint && npm test && npm run validate:extension",
-    "format": "prettier --write \".github/**/*.yml\" \"src/**/*.{js,css,html}\" \"scripts/**/*.mjs\" \"tests/**/*.mjs\" \"AGENTS.md\" \"eslint.config.mjs\" \"manifest.json\" \"package.json\" \"package-lock.json\"",
-    "format:check": "prettier --check \".github/**/*.yml\" \"src/**/*.{js,css,html}\" \"scripts/**/*.mjs\" \"tests/**/*.mjs\" \"AGENTS.md\" \"eslint.config.mjs\" \"manifest.json\" \"package.json\" \"package-lock.json\"",
+    "check": "npm run format:check && npm run lint && npm test && npm run validate:extension && npm run validate:api",
+    "format": "prettier --write \".github/**/*.yml\" \"api/**/*.mjs\" \"src/**/*.{js,css,html}\" \"scripts/**/*.mjs\" \"tests/**/*.mjs\" \"AGENTS.md\" \"eslint.config.mjs\" \"manifest.json\" \"package.json\" \"package-lock.json\" \"wrangler.jsonc\"",
+    "format:check": "prettier --check \".github/**/*.yml\" \"api/**/*.mjs\" \"src/**/*.{js,css,html}\" \"scripts/**/*.mjs\" \"tests/**/*.mjs\" \"AGENTS.md\" \"eslint.config.mjs\" \"manifest.json\" \"package.json\" \"package-lock.json\" \"wrangler.jsonc\"",
     "lint": "eslint . --max-warnings=0",
     "test": "node --test",
-    "validate:extension": "node scripts/validate-extension.mjs"
+    "validate:extension": "node scripts/validate-extension.mjs",
+    "validate:api": "wrangler deploy --dry-run --outdir dist/api"
   },
   "engines": {
     "node": ">=24"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
+    "ajv": "^8.18.0",
+    "ajv-formats": "^3.0.1",
     "eslint": "10.8.1",
     "globals": "17.11.0",
-    "prettier": "3.9.6"
+    "prettier": "3.9.6",
+    "wrangler": "^4.123.0"
   }
 }
