@@ -3,6 +3,11 @@ const selectionButton = document.querySelector("#selection-button");
 const selectionSection = document.querySelector("#selection");
 const selectedCodeElement = document.querySelector("#selected-code");
 const explanationElement = document.querySelector("#explanation");
+const explanationCountElement = document.querySelector("#explanation-count");
+const inputErrorElement = document.querySelector("#input-error");
+const evaluationButton = document.querySelector("#evaluation-button");
+
+const inputValidation = globalThis.CodeReadingTrainerInputValidation;
 
 const PAGE_STATUS = Object.freeze({
   ELIGIBLE: "eligible",
@@ -43,7 +48,29 @@ async function getPageContext() {
 function resetSelection() {
   selectedCodeElement.textContent = "";
   explanationElement.value = "";
+  explanationElement.setAttribute("aria-invalid", "false");
+  explanationCountElement.textContent = `0 / ${inputValidation.INPUT_LIMITS.explanation.toLocaleString("ja-JP")}文字`;
+  inputErrorElement.textContent = "";
+  evaluationButton.disabled = true;
   selectionSection.hidden = true;
+}
+
+function updateInputValidation() {
+  const validation = inputValidation.validateTrainingInput(
+    selectedCodeElement.textContent,
+    explanationElement.value,
+  );
+
+  explanationCountElement.textContent = `${validation.explanationCharacterCount.toLocaleString("ja-JP")} / ${inputValidation.INPUT_LIMITS.explanation.toLocaleString("ja-JP")}文字`;
+  explanationElement.setAttribute(
+    "aria-invalid",
+    validation.explanationError ? "true" : "false",
+  );
+  inputErrorElement.textContent =
+    validation.codeError ?? validation.explanationError ?? "";
+  evaluationButton.disabled = !validation.valid;
+
+  return validation;
 }
 
 function applyPageContext(context) {
@@ -96,19 +123,46 @@ selectionButton.addEventListener("click", async () => {
       return;
     }
 
+    applyPageContext(context);
+
     if (!context.selectedText) {
+      resetSelection();
       statusElement.textContent =
         "GitHub上で説明したいコードを選択してください。";
       return;
     }
 
+    const validation = inputValidation.validateTrainingInput(
+      context.selectedText,
+      "",
+    );
+    if (validation.codeError) {
+      resetSelection();
+      statusElement.textContent = validation.codeError;
+      return;
+    }
+
+    resetSelection();
     selectedCodeElement.textContent = context.selectedText;
     selectionSection.hidden = false;
     statusElement.textContent =
       "選択したコードを読み、自分の言葉で説明してみましょう。";
+    updateInputValidation();
   } catch (error) {
     statusElement.textContent = getErrorMessage(error);
   }
+});
+
+explanationElement.addEventListener("input", updateInputValidation);
+
+selectionSection.addEventListener("submit", (event) => {
+  event.preventDefault();
+
+  if (!updateInputValidation().valid) {
+    return;
+  }
+
+  statusElement.textContent = "入力内容を確認しました。評価機能は準備中です。";
 });
 
 chrome.runtime.onMessage.addListener((message) => {

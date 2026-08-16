@@ -34,7 +34,7 @@ function getPageContext() {
     title: document.title,
     selectedText:
       page.status === PAGE_STATUS.ELIGIBLE
-        ? (window.getSelection()?.toString().trim() ?? "")
+        ? (window.getSelection()?.toString() ?? "")
         : "",
   };
 }
