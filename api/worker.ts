@@ -1,16 +1,22 @@
-import { buildEvaluationResponse, CONTRACT_VERSION } from "./evaluation.mjs";
+import { buildEvaluationResponse, CONTRACT_VERSION } from "./evaluation.ts";
 import {
   evaluateWithWorkersAI,
   ModelQuotaError,
   ModelResponseError,
   ModelTimeoutError,
-} from "./workers-ai.mjs";
+} from "./workers-ai.ts";
+import type { EvaluationInput, WorkersAiEnvironment } from "./workers-ai.ts";
 
 const MAX_BODY_BYTES = 64 * 1024;
 const API_TIMEOUT_MS = 25_000;
 const SOURCE_CHECK_TIMEOUT_MS = 3_000;
 const EVALUATION_PATH = "/v1/evaluations";
-const REQUEST_FIELDS = ["language", "sourceUrl", "code", "explanation"];
+const REQUEST_FIELDS = [
+  "language",
+  "sourceUrl",
+  "code",
+  "explanation",
+] as const;
 const GITHUB_PYTHON_URL =
   /^https:\/\/github\.com\/[^/]+\/[^/]+\/blob\/.+\.py(?:[?#].*)?$/;
 
@@ -56,10 +62,57 @@ const ERROR_DEFINITIONS = {
     message: "評価処理がタイムアウトしました。再試行してください。",
     retryable: true,
   },
-};
+} as const;
+
+type ApiErrorCode = keyof typeof ERROR_DEFINITIONS;
+
+interface ValidationDetail {
+  field: string;
+  reason: string;
+}
+
+interface ApiErrorOptions {
+  retryAfterSeconds?: number;
+}
+
+interface RateLimiter {
+  limit(input: { key: string }): Promise<{ success: boolean }>;
+}
+
+export interface WorkerEnvironment extends WorkersAiEnvironment {
+  ALLOWED_EXTENSION_IDS?: string;
+  ALLOW_MISSING_ORIGIN?: string;
+  RATE_LIMITER?: RateLimiter;
+}
+
+interface WorkerOptions {
+  apiTimeoutMs?: number;
+  clearTimeout?: (handle: unknown) => void;
+  evaluate?: (
+    input: EvaluationInput,
+    env: WorkerEnvironment,
+    signal: AbortSignal,
+  ) => Promise<unknown>;
+  fetch?: typeof fetch;
+  now?: () => Date;
+  randomUUID?: () => string;
+  setTimeout?: (callback: () => void, milliseconds: number) => unknown;
+}
+
+export interface EvaluationWorker {
+  fetch(request: Request, env: WorkerEnvironment): Promise<Response>;
+}
 
 class ApiError extends Error {
-  constructor(code, details = [], options = {}) {
+  readonly code: ApiErrorCode;
+  readonly details: ValidationDetail[];
+  readonly retryAfterSeconds?: number;
+
+  constructor(
+    code: ApiErrorCode,
+    details: ValidationDetail[] = [],
+    options: ApiErrorOptions = {},
+  ) {
     super(code);
     this.code = code;
     this.details = details;
@@ -67,8 +120,11 @@ class ApiError extends Error {
   }
 }
 
-function runUntilAborted(promise, signal) {
-  return new Promise((resolve, reject) => {
+function runUntilAborted<T>(
+  promise: PromiseLike<T>,
+  signal: AbortSignal,
+): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
     const handleAbort = () => reject(new ApiError("EVALUATION_TIMEOUT"));
 
     if (signal.aborted) {
@@ -90,7 +146,11 @@ function runUntilAborted(promise, signal) {
   });
 }
 
-function jsonResponse(body, status, headers = {}) {
+function jsonResponse(
+  body: unknown,
+  status: number,
+  headers: Record<string, string> = {},
+): Response {
   return new Response(JSON.stringify(body), {
     status,
     headers: {
@@ -101,14 +161,27 @@ function jsonResponse(body, status, headers = {}) {
   });
 }
 
-function createErrorResponse(error, requestId, headers = {}) {
-  const definition =
-    ERROR_DEFINITIONS[error.code] ?? ERROR_DEFINITIONS.INTERNAL_ERROR;
-  const body = {
+function createErrorResponse(
+  error: ApiError,
+  requestId: string,
+  headers: Record<string, string> = {},
+): Response {
+  const definition = ERROR_DEFINITIONS[error.code];
+  const body: {
+    contractVersion: string;
+    error: {
+      code: ApiErrorCode;
+      details: ValidationDetail[];
+      message: string;
+      retryable: boolean;
+      retryAfterSeconds?: number;
+    };
+    requestId: string;
+  } = {
     requestId,
     contractVersion: CONTRACT_VERSION,
     error: {
-      code: error.code in ERROR_DEFINITIONS ? error.code : "INTERNAL_ERROR",
+      code: error.code,
       message: definition.message,
       details: Array.isArray(error.details) ? error.details : [],
       retryable: definition.retryable,
@@ -123,7 +196,10 @@ function createErrorResponse(error, requestId, headers = {}) {
   return jsonResponse(body, definition.status, headers);
 }
 
-function getAllowedOrigin(request, env) {
+function getAllowedOrigin(
+  request: Request,
+  env: WorkerEnvironment,
+): string | null {
   const origin = request.headers.get("Origin");
   const allowedIds = (env.ALLOWED_EXTENSION_IDS ?? "")
     .split(",")
@@ -145,7 +221,7 @@ function getAllowedOrigin(request, env) {
   return origin;
 }
 
-function corsHeaders(origin) {
+function corsHeaders(origin: string | null): Record<string, string> {
   if (!origin) {
     return {};
   }
@@ -159,11 +235,11 @@ function corsHeaders(origin) {
   };
 }
 
-function characterLength(value) {
+function characterLength(value: string): number {
   return [...value].length;
 }
 
-function isContractSourceUrl(value) {
+function isContractSourceUrl(value: unknown): value is string {
   if (
     typeof value !== "string" ||
     characterLength(value) > 2048 ||
@@ -181,10 +257,14 @@ function isContractSourceUrl(value) {
   }
 }
 
-function validateRequestBody(value) {
-  const details = [];
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
 
-  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+function validateRequestBody(value: unknown): EvaluationInput {
+  const details: ValidationDetail[] = [];
+
+  if (!isRecord(value)) {
     throw new ApiError("VALIDATION_ERROR", [
       { field: "$", reason: "JSONオブジェクトを指定してください。" },
     ]);
@@ -197,7 +277,7 @@ function validateRequestBody(value) {
     }
   }
   for (const field of actualFields) {
-    if (!REQUEST_FIELDS.includes(field)) {
+    if (!(REQUEST_FIELDS as readonly string[]).includes(field)) {
       details.push({
         field: characterLength(field) <= 100 ? field : "$",
         reason: "未定義の項目です。",
@@ -219,7 +299,7 @@ function validateRequestBody(value) {
   for (const [field, maximum] of [
     ["code", 30_000],
     ["explanation", 5_000],
-  ]) {
+  ] as const) {
     if (field in value) {
       if (typeof value[field] !== "string") {
         details.push({ field, reason: "文字列で入力してください。" });
@@ -238,10 +318,13 @@ function validateRequestBody(value) {
     throw new ApiError("VALIDATION_ERROR", details.slice(0, 20));
   }
 
-  return value;
+  return value as unknown as EvaluationInput;
 }
 
-async function readJsonBody(request, deadlineSignal) {
+async function readJsonBody(
+  request: Request,
+  deadlineSignal: AbortSignal,
+): Promise<unknown> {
   const contentLength = Number(request.headers.get("Content-Length"));
   if (Number.isFinite(contentLength) && contentLength > MAX_BODY_BYTES) {
     throw new ApiError("PAYLOAD_TOO_LARGE");
@@ -252,7 +335,7 @@ async function readJsonBody(request, deadlineSignal) {
     throw new ApiError("INVALID_JSON");
   }
 
-  const chunks = [];
+  const chunks: Uint8Array[] = [];
   let totalBytes = 0;
   try {
     while (true) {
@@ -289,7 +372,7 @@ async function readJsonBody(request, deadlineSignal) {
     offset += chunk.byteLength;
   }
 
-  let text;
+  let text: string;
   try {
     text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
   } catch {
@@ -304,17 +387,17 @@ async function readJsonBody(request, deadlineSignal) {
 }
 
 async function verifyPublicSource(
-  sourceUrl,
-  fetchImplementation,
-  deadlineSignal,
-) {
+  sourceUrl: string,
+  fetchImplementation: typeof fetch,
+  deadlineSignal: AbortSignal,
+): Promise<void> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), SOURCE_CHECK_TIMEOUT_MS);
   const signal = AbortSignal.any([controller.signal, deadlineSignal]);
 
   try {
     let currentUrl = sourceUrl;
-    let response;
+    let response: Response | undefined;
 
     for (let redirectCount = 0; redirectCount <= 3; redirectCount += 1) {
       response = await fetchImplementation(currentUrl, {
@@ -344,6 +427,9 @@ async function verifyPublicSource(
       currentUrl = nextUrl;
     }
 
+    if (!response) {
+      throw new ApiError("INTERNAL_ERROR");
+    }
     if (
       response.status === 401 ||
       response.status === 404 ||
@@ -372,7 +458,11 @@ async function verifyPublicSource(
   }
 }
 
-async function enforceRateLimit(request, origin, env) {
+async function enforceRateLimit(
+  request: Request,
+  origin: string | null,
+  env: WorkerEnvironment,
+): Promise<void> {
   if (!env.RATE_LIMITER || typeof env.RATE_LIMITER.limit !== "function") {
     throw new ApiError("INTERNAL_ERROR");
   }
@@ -386,7 +476,7 @@ async function enforceRateLimit(request, origin, env) {
   }
 }
 
-function secondsUntilNextUtcDay(now) {
+function secondsUntilNextUtcDay(now: Date): number {
   const nextReset = Date.UTC(
     now.getUTCFullYear(),
     now.getUTCMonth(),
@@ -396,19 +486,25 @@ function secondsUntilNextUtcDay(now) {
   return Math.max(1, Math.ceil((nextReset - now.getTime()) / 1000));
 }
 
-export function createWorker(options = {}) {
+export function createWorker(options: WorkerOptions = {}): EvaluationWorker {
   const fetchImplementation = options.fetch ?? fetch;
   const evaluate = options.evaluate ?? evaluateWithWorkersAI;
   const now = options.now ?? (() => new Date());
   const randomUUID = options.randomUUID ?? (() => crypto.randomUUID());
   const apiTimeoutMs = options.apiTimeoutMs ?? API_TIMEOUT_MS;
-  const scheduleTimeout = options.setTimeout ?? setTimeout;
-  const cancelTimeout = options.clearTimeout ?? clearTimeout;
+  const scheduleTimeout =
+    options.setTimeout ??
+    ((callback: () => void, milliseconds: number): unknown =>
+      setTimeout(callback, milliseconds));
+  const cancelTimeout =
+    options.clearTimeout ??
+    ((handle: unknown): void =>
+      clearTimeout(handle as ReturnType<typeof setTimeout>));
 
   return {
-    async fetch(request, env) {
+    async fetch(request: Request, env: WorkerEnvironment): Promise<Response> {
       const requestId = randomUUID();
-      let headers = {};
+      let headers: Record<string, string> = {};
       const deadlineController = new AbortController();
       const deadline = scheduleTimeout(
         () => deadlineController.abort(),
@@ -440,7 +536,7 @@ export function createWorker(options = {}) {
               ]);
             }
             if (
-              request.headers.get("Content-Type")?.split(";", 1)[0].trim() !==
+              request.headers.get("Content-Type")?.split(";", 1)[0]?.trim() !==
               "application/json"
             ) {
               throw new ApiError("VALIDATION_ERROR", [

@@ -1,4 +1,36 @@
-import { CRITERIA, validateModelEvaluation } from "./evaluation.mjs";
+import { CRITERIA, validateModelEvaluation } from "./evaluation.ts";
+import type { ModelEvaluation } from "./evaluation.ts";
+
+export interface EvaluationInput {
+  code: string;
+  explanation: string;
+  language: "python";
+  sourceUrl: string;
+}
+
+export interface AiRunOptions {
+  signal: AbortSignal;
+  tags: string[];
+}
+
+export interface WorkersAiBinding {
+  run(
+    model: string,
+    input: Record<string, unknown>,
+    options: AiRunOptions,
+  ): Promise<unknown>;
+}
+
+export interface WorkersAiEnvironment {
+  AI?: WorkersAiBinding;
+  AI_MODEL?: string;
+}
+
+interface EvaluationOptions {
+  clearTimeout?: (handle: unknown) => void;
+  modelTimeoutMs?: number;
+  setTimeout?: (callback: () => void, milliseconds: number) => unknown;
+}
 
 const MODEL_TIMEOUT_MS = 20_000;
 
@@ -57,21 +89,35 @@ export class ModelTimeoutError extends Error {}
 export class ModelResponseError extends Error {}
 export class ModelQuotaError extends Error {}
 
-function extractOutputText(response) {
-  if (typeof response?.response === "string") {
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object";
+}
+
+function extractOutputText(response: unknown): string | null {
+  if (!isRecord(response)) {
+    return null;
+  }
+  if (typeof response.response === "string") {
     return response.response;
   }
-  if (typeof response?.output_text === "string") {
+  if (typeof response.output_text === "string") {
     return response.output_text;
   }
 
-  const content = response?.choices?.[0]?.message?.content;
+  const choices = Array.isArray(response.choices) ? response.choices : [];
+  const firstChoice = isRecord(choices[0]) ? choices[0] : undefined;
+  const message = isRecord(firstChoice?.message)
+    ? firstChoice.message
+    : undefined;
+  const content = message?.content;
   return typeof content === "string" ? content : null;
 }
 
-function isFreeAllocationError(error) {
-  const code = String(error?.code ?? "");
-  const message = String(error?.message ?? "").toLowerCase();
+function isFreeAllocationError(error: unknown): boolean {
+  const code = String(isRecord(error) ? (error.code ?? "") : "");
+  const message = String(
+    isRecord(error) ? (error.message ?? "") : "",
+  ).toLowerCase();
 
   return (
     code === "3036" ||
@@ -81,18 +127,24 @@ function isFreeAllocationError(error) {
 }
 
 export async function evaluateWithWorkersAI(
-  input,
-  env,
-  deadlineSignal,
-  options = {},
-) {
+  input: EvaluationInput,
+  env: WorkersAiEnvironment,
+  deadlineSignal?: AbortSignal,
+  options: EvaluationOptions = {},
+): Promise<ModelEvaluation> {
   if (!env.AI || typeof env.AI.run !== "function" || !env.AI_MODEL) {
     throw new ModelResponseError("The model service is not configured.");
   }
 
   const controller = new AbortController();
-  const scheduleTimeout = options.setTimeout ?? setTimeout;
-  const cancelTimeout = options.clearTimeout ?? clearTimeout;
+  const scheduleTimeout =
+    options.setTimeout ??
+    ((callback: () => void, milliseconds: number): unknown =>
+      setTimeout(callback, milliseconds));
+  const cancelTimeout =
+    options.clearTimeout ??
+    ((handle: unknown): void =>
+      clearTimeout(handle as ReturnType<typeof setTimeout>));
   const timeout = scheduleTimeout(
     () => controller.abort(),
     options.modelTimeoutMs ?? MODEL_TIMEOUT_MS,
@@ -140,7 +192,7 @@ export async function evaluateWithWorkersAI(
       );
     }
 
-    let evaluation;
+    let evaluation: unknown;
     try {
       evaluation = JSON.parse(outputText);
     } catch {
@@ -153,7 +205,7 @@ export async function evaluateWithWorkersAI(
 
     return evaluation;
   } catch (error) {
-    if (signal.aborted || error?.name === "AbortError") {
+    if (signal.aborted || (isRecord(error) && error.name === "AbortError")) {
       throw new ModelTimeoutError("The model request timed out.");
     }
     if (error instanceof ModelResponseError) {

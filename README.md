@@ -24,30 +24,38 @@ code-reading-trainer/
 │   ├── implementation-plan.md
 │   └── product-overview.md
 ├── api/
-│   ├── evaluation.mjs
-│   ├── workers-ai.mjs
-│   └── worker.mjs
+│   ├── evaluation.ts
+│   ├── workers-ai.ts
+│   └── worker.ts
 ├── contracts/evaluation/v1/
 │   ├── evaluation-error.schema.json
 │   ├── evaluation-request.schema.json
 │   ├── evaluation-response.schema.json
 │   └── examples/
 ├── src/
-│   ├── background.js
-│   ├── content.js
+│   ├── background.ts
+│   ├── content.ts
+│   ├── input-validation.ts
+│   ├── page-context.ts
 │   ├── sidepanel.css
 │   ├── sidepanel.html
-│   └── sidepanel.js
+│   └── sidepanel.ts
+├── tests/
+│   └── *.test.ts
+├── tsconfig.json
+├── tsconfig.extension.json
+├── tsconfig.tests.json
 ├── manifest.json
 └── README.md
 ```
 
 ## 開発中の拡張機能を読み込む
 
-1. Chromeで `chrome://extensions` を開く
-2. 「デベロッパー モード」を有効にする
-3. 「パッケージ化されていない拡張機能を読み込む」を選ぶ
-4. このディレクトリを指定する
+1. `npm run build` でTypeScriptをコンパイルする
+2. Chromeで `chrome://extensions` を開く
+3. 「デベロッパー モード」を有効にする
+4. 「パッケージ化されていない拡張機能を読み込む」を選ぶ
+5. `dist/extension` ディレクトリを指定する
 
 public repositoryのPythonコード表示ページを開くと、URL、repository、ref、ファイルパスを判定し、選択したコードをサイドパネルへ取り込めます。Python以外のファイル、コード表示以外のページ、private repositoryは対象外として案内します。
 
@@ -61,5 +69,7 @@ Node.js 24を使用します。依存関係をインストールしたあと、�
 npm ci --ignore-scripts
 npm run check
 ```
+
+`npm run check` はフォーマット、Lint、型チェック、単体テスト、Chrome拡張のビルド・検証、評価APIのdry-run bundleを順に確認します。拡張機能だけを再ビルドするときは `npm run build` を実行してください。
 
 評価APIをローカル実行またはデプロイする手順は [`docs/evaluation-api-operations.md`](docs/evaluation-api-operations.md) を参照してください。

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
 
-import "../src/page-context.js";
+import "../src/page-context.ts";
 
 const { PAGE_STATUS, UNSUPPORTED_REASON, analyzeGitHubPage } =
   globalThis.CodeReadingTrainerPageContext;

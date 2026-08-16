@@ -2,30 +2,52 @@ import { readFile, readdir, stat } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 
-const projectRoot = process.cwd();
+const projectRoot = path.join(process.cwd(), "dist/extension");
 const manifestPath = path.join(projectRoot, "manifest.json");
 const allowedPermissions = new Set(["activeTab", "sidePanel", "storage"]);
 const allowedHostPermissions = new Set(["https://github.com/*"]);
 const allowedContentScriptMatches = new Set(["https://github.com/*"]);
 
-const errors = [];
+interface ExtensionManifest {
+  action?: {
+    default_icon?: Record<string, string>;
+    default_popup?: string;
+  };
+  background?: { service_worker?: string };
+  content_scripts?: Array<{
+    css?: string[];
+    js?: string[];
+    matches?: string[];
+  }>;
+  host_permissions?: string[];
+  icons?: Record<string, string>;
+  manifest_version?: number;
+  options_page?: string;
+  options_ui?: { page?: string };
+  permissions?: string[];
+  side_panel?: { default_path?: string };
+  version?: string;
+}
 
-function report(message) {
+const errors: string[] = [];
+
+function report(message: string): void {
   errors.push(message);
 }
 
-async function readManifest() {
+async function readManifest(): Promise<ExtensionManifest | null> {
   try {
     return JSON.parse(await readFile(manifestPath, "utf8"));
   } catch (error) {
-    report(`manifest.json could not be parsed: ${error.message}`);
+    const message = error instanceof Error ? error.message : String(error);
+    report(`manifest.json could not be parsed: ${message}`);
     return null;
   }
 }
 
-function collectReferencedFiles(manifest) {
-  const referencedFiles = new Set();
-  const add = (value) => {
+function collectReferencedFiles(manifest: ExtensionManifest): Set<string> {
+  const referencedFiles = new Set<string>();
+  const add = (value: unknown): void => {
     if (typeof value === "string" && value.length > 0) {
       referencedFiles.add(value);
     }
@@ -49,7 +71,7 @@ function collectReferencedFiles(manifest) {
   return referencedFiles;
 }
 
-async function validateReferencedFile(relativePath) {
+async function validateReferencedFile(relativePath: string): Promise<void> {
   const absolutePath = path.resolve(projectRoot, relativePath);
   const relativeToRoot = path.relative(projectRoot, absolutePath);
 
@@ -68,11 +90,11 @@ async function validateReferencedFile(relativePath) {
   }
 }
 
-async function validateExecutableFile(relativePath) {
+async function validateExecutableFile(relativePath: string): Promise<void> {
   if (!relativePath.endsWith(".js") && !relativePath.endsWith(".html")) return;
 
   const source = await readFile(path.join(projectRoot, relativePath), "utf8");
-  const forbiddenPatterns = [
+  const forbiddenPatterns: Array<readonly [RegExp, string]> = [
     [/(?:eval|Function)\s*\(/u, "dynamic code execution"],
     [/importScripts\s*\(\s*["']https?:\/\//u, "remote importScripts call"],
     [/import\s*\(\s*["']https?:\/\//u, "remote dynamic import"],
@@ -88,7 +110,7 @@ async function validateExecutableFile(relativePath) {
   if (relativePath.endsWith(".html")) {
     const scriptTags = source.matchAll(/<script\b([^>]*)>/giu);
     for (const match of scriptTags) {
-      const attributes = match[1];
+      const attributes = match[1] ?? "";
       if (!/\bsrc\s*=/iu.test(attributes)) {
         report(`${relativePath} contains an inline script`);
       }
@@ -96,9 +118,9 @@ async function validateExecutableFile(relativePath) {
   }
 }
 
-async function collectPackageFiles(directoryPath) {
+async function collectPackageFiles(directoryPath: string): Promise<string[]> {
   const entries = await readdir(directoryPath, { withFileTypes: true });
-  const files = [];
+  const files: string[] = [];
 
   for (const entry of entries) {
     const absolutePath = path.join(directoryPath, entry.name);

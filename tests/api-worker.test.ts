@@ -5,13 +5,14 @@ import test from "node:test";
 import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
 
-import { CRITERIA } from "../api/evaluation.mjs";
+import { CRITERIA } from "../api/evaluation.ts";
 import {
   ModelQuotaError,
   ModelResponseError,
   ModelTimeoutError,
-} from "../api/workers-ai.mjs";
-import { createWorker } from "../api/worker.mjs";
+} from "../api/workers-ai.ts";
+import { createWorker } from "../api/worker.ts";
+import type { WorkerEnvironment } from "../api/worker.ts";
 
 const [requestSchema, responseSchema, errorSchema] = await Promise.all(
   [
@@ -57,7 +58,7 @@ function validModelEvaluation() {
   };
 }
 
-function createEnvironment(rateLimitSuccess = true) {
+function createEnvironment(rateLimitSuccess = true): WorkerEnvironment {
   return {
     ALLOWED_EXTENSION_IDS: "abcdefghijklmnop",
     RATE_LIMITER: {

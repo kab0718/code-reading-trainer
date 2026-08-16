@@ -1,7 +1,7 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "code-reading-trainer-evaluation-api",
-  "main": "api/worker.mjs",
+  "main": "api/worker.ts",
   "compatibility_date": "2026-08-16",
   "workers_dev": true,
   "ai": {

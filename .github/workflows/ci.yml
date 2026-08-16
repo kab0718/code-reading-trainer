@@ -38,6 +38,7 @@ jobs:
 
       - name: Build distribution archive
         run: |
-          mkdir -p dist
-          zip -q -r dist/code-reading-trainer.zip manifest.json src
+          cd dist/extension
+          zip -q -r ../code-reading-trainer.zip manifest.json src
+          cd ../..
           unzip -t dist/code-reading-trainer.zip

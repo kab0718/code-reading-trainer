@@ -4,11 +4,14 @@
     explanation: 5_000,
   });
 
-  function countCharacters(value) {
+  function countCharacters(value: string): number {
     return Array.from(value).length;
   }
 
-  function validateTrainingInput(code, explanation) {
+  function validateTrainingInput(
+    code: string,
+    explanation: string,
+  ): TrainingInputValidation {
     const codeCharacterCount = countCharacters(code);
     const explanationCharacterCount = countCharacters(explanation);
     let codeError = null;

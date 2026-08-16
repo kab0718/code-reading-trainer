@@ -6,7 +6,7 @@
 [`evaluation-api-contract.md`](evaluation-api-contract.md) と
 [`contracts/evaluation/v1/`](../contracts/evaluation/v1/) を正本とする。
 
-- Workerエントリーポイント: [`api/worker.mjs`](../api/worker.mjs)
+- Workerエントリーポイント: [`api/worker.ts`](../api/worker.ts)
 - AIサービス: Cloudflare Workers AI bindingのJSON Schema出力
 - モデル名: `AI_MODEL`（初期値は `@cf/openai/gpt-oss-20b`）
 - 利用制限: Cloudflare Workers Rate Limiting bindingで、許可した拡張機能Originと接続元IPの組み合わせごとに10回/60秒

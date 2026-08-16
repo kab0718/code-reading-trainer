@@ -1,13 +1,15 @@
 import js from "@eslint/js";
 import { defineConfig } from "eslint/config";
 import globals from "globals";
+import tseslint from "typescript-eslint";
 
 export default defineConfig([
   {
     ignores: ["dist/**"],
   },
+  ...tseslint.configs.recommended,
   {
-    files: ["src/**/*.js"],
+    files: ["src/**/*.ts"],
     languageOptions: {
       ecmaVersion: "latest",
       sourceType: "script",
@@ -20,9 +22,9 @@ export default defineConfig([
   },
   {
     files: [
-      "api/**/*.mjs",
-      "scripts/**/*.mjs",
-      "tests/**/*.mjs",
+      "api/**/*.ts",
+      "scripts/**/*.ts",
+      "tests/**/*.ts",
       "eslint.config.mjs",
     ],
     languageOptions: {
@@ -34,5 +36,22 @@ export default defineConfig([
       },
     },
     rules: js.configs.recommended.rules,
+  },
+  {
+    files: ["**/*.ts"],
+    rules: {
+      "no-undef": "off",
+      "no-unused-vars": "off",
+      "@typescript-eslint/no-unused-vars": [
+        "error",
+        { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
+      ],
+    },
+  },
+  {
+    files: ["**/*.d.ts"],
+    rules: {
+      "no-var": "off",
+    },
   },
 ]);

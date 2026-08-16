@@ -1,13 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { CRITERIA } from "../api/evaluation.mjs";
+import { CRITERIA } from "../api/evaluation.ts";
 import {
   evaluateWithWorkersAI,
   ModelQuotaError,
   ModelResponseError,
   ModelTimeoutError,
-} from "../api/workers-ai.mjs";
+} from "../api/workers-ai.ts";
+import type { EvaluationInput } from "../api/workers-ai.ts";
 
 function validModelEvaluation() {
   return {
@@ -29,7 +30,7 @@ const input = {
   sourceUrl: "https://github.com/example/repo/blob/main/example.py",
   code: "def example(value):\n    return value.strip()",
   explanation: "文字列の空白を除去します。",
-};
+} satisfies EvaluationInput;
 
 test("Workers AI bindingへ構造化出力を要求しURLを送信しない", async () => {
   let receivedModel;
@@ -99,7 +100,11 @@ test("Workers AIの生エラーを汎用モデルエラーへ変換する", asyn
     }),
     (error) => {
       assert.equal(error instanceof ModelResponseError, true);
-      assert.equal(error.message.includes("raw provider details"), false);
+      assert.equal(
+        error instanceof Error &&
+          error.message.includes("raw provider details"),
+        false,
+      );
       return true;
     },
   );
@@ -108,8 +113,10 @@ test("Workers AIの生エラーを汎用モデルエラーへ変換する", asyn
 test("Workers AI無料割当超過を専用エラーへ変換する", async () => {
   const aiMock = {
     run: async () => {
-      const error = new Error("You have used up your daily free allocation.");
-      error.code = 3036;
+      const error = Object.assign(
+        new Error("You have used up your daily free allocation."),
+        { code: 3036 },
+      );
       throw error;
     },
   };

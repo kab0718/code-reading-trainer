@@ -10,7 +10,7 @@ import {
   buildEvaluationResponse,
   CRITERIA,
   validateModelEvaluation,
-} from "../api/evaluation.mjs";
+} from "../api/evaluation.ts";
 
 const responseSchema = JSON.parse(
   await readFile(

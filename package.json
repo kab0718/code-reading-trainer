@@ -2,14 +2,18 @@
   "name": "code-reading-trainer",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "description": "A Chrome extension for practicing code reading on GitHub.",
   "scripts": {
-    "check": "npm run format:check && npm run lint && npm test && npm run validate:extension && npm run validate:api",
-    "format": "prettier --write \".github/**/*.yml\" \"api/**/*.mjs\" \"src/**/*.{js,css,html}\" \"scripts/**/*.mjs\" \"tests/**/*.mjs\" \"AGENTS.md\" \"eslint.config.mjs\" \"manifest.json\" \"package.json\" \"package-lock.json\" \"wrangler.jsonc\"",
-    "format:check": "prettier --check \".github/**/*.yml\" \"api/**/*.mjs\" \"src/**/*.{js,css,html}\" \"scripts/**/*.mjs\" \"tests/**/*.mjs\" \"AGENTS.md\" \"eslint.config.mjs\" \"manifest.json\" \"package.json\" \"package-lock.json\" \"wrangler.jsonc\"",
+    "build": "npm run build:extension",
+    "build:extension": "node scripts/build-extension.ts",
+    "check": "npm run format:check && npm run lint && npm run typecheck && npm test && npm run validate:extension && npm run validate:api",
+    "format": "prettier --write \".github/**/*.yml\" \"api/**/*.ts\" \"src/**/*.{ts,css,html}\" \"scripts/**/*.ts\" \"tests/**/*.ts\" \"AGENTS.md\" \"README.md\" \"eslint.config.mjs\" \"manifest.json\" \"package.json\" \"package-lock.json\" \"tsconfig*.json\" \"wrangler.jsonc\"",
+    "format:check": "prettier --check \".github/**/*.yml\" \"api/**/*.ts\" \"src/**/*.{ts,css,html}\" \"scripts/**/*.ts\" \"tests/**/*.ts\" \"AGENTS.md\" \"README.md\" \"eslint.config.mjs\" \"manifest.json\" \"package.json\" \"package-lock.json\" \"tsconfig*.json\" \"wrangler.jsonc\"",
     "lint": "eslint . --max-warnings=0",
-    "test": "node --test",
-    "validate:extension": "node scripts/validate-extension.mjs",
+    "test": "npm run build:extension && node --test tests/*.test.ts",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.tests.json --noEmit",
+    "validate:extension": "npm run build:extension && node scripts/validate-extension.ts",
     "validate:api": "wrangler deploy --dry-run --outdir dist/api"
   },
   "engines": {
@@ -17,11 +21,15 @@
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
+    "@types/chrome": "^0.2.6",
+    "@types/node": "^26.2.0",
     "ajv": "^8.18.0",
     "ajv-formats": "^3.0.1",
     "eslint": "10.8.1",
     "globals": "17.11.0",
     "prettier": "3.9.6",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.67.0",
     "wrangler": "^4.123.0"
   }
 }
