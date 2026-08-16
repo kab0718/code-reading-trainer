@@ -21,7 +21,8 @@ async function getPageContext() {
 async function updateStatus() {
   try {
     await getPageContext();
-    statusElement.textContent = "GitHub上のコードを選択して、トレーニングを始められます。";
+    statusElement.textContent =
+      "GitHub上のコードを選択して、トレーニングを始められます。";
   } catch (error) {
     statusElement.textContent = error.message;
   }
@@ -32,17 +33,18 @@ selectionButton.addEventListener("click", async () => {
     const context = await getPageContext();
 
     if (!context.selectedText) {
-      statusElement.textContent = "GitHub上で説明したいコードを選択してください。";
+      statusElement.textContent =
+        "GitHub上で説明したいコードを選択してください。";
       return;
     }
 
     selectedCodeElement.textContent = context.selectedText;
     selectionSection.hidden = false;
-    statusElement.textContent = "選択したコードを読み、自分の言葉で説明してみましょう。";
+    statusElement.textContent =
+      "選択したコードを読み、自分の言葉で説明してみましょう。";
   } catch (error) {
     statusElement.textContent = error.message;
   }
 });
 
 updateStatus();
-

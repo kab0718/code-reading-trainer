@@ -6,7 +6,6 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   sendResponse({
     url: window.location.href,
     title: document.title,
-    selectedText: window.getSelection()?.toString().trim() ?? ""
+    selectedText: window.getSelection()?.toString().trim() ?? "",
   });
 });
-
