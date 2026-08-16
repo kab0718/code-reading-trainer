@@ -2,7 +2,7 @@
 
 GitHub上のPythonコードを読み、その処理内容を自分の言葉で説明することで、コードリーディング力を鍛えるChrome拡張です。
 
-現在は企画・初期設計段階です。プロダクトの狙い、MVP、学習体験、評価方針は [`docs/product-overview.md`](docs/product-overview.md)、評価の配点とAPI契約は [`docs/evaluation-api-contract.md`](docs/evaluation-api-contract.md)、評価APIの構成と運用は [`docs/evaluation-api-operations.md`](docs/evaluation-api-operations.md)、今後の作業手順と完了条件は [`docs/implementation-plan.md`](docs/implementation-plan.md) にまとめています。
+現在は企画・初期設計段階です。プロダクトの狙い、MVP、学習体験、評価方針は [`docs/product-overview.md`](docs/product-overview.md)、Python関数・メソッド候補の抽出方式は [`docs/python-candidate-extraction.md`](docs/python-candidate-extraction.md)、評価の配点とAPI契約は [`docs/evaluation-api-contract.md`](docs/evaluation-api-contract.md)、評価APIの構成と運用は [`docs/evaluation-api-operations.md`](docs/evaluation-api-operations.md)、今後の作業手順と完了条件は [`docs/implementation-plan.md`](docs/implementation-plan.md) にまとめています。
 
 ## 想定する体験
 
@@ -22,6 +22,7 @@ code-reading-trainer/
 │   ├── evaluation-api-contract.md
 │   ├── evaluation-api-operations.md
 │   ├── implementation-plan.md
+│   ├── python-candidate-extraction.md
 │   └── product-overview.md
 ├── api/
 │   ├── evaluation.ts

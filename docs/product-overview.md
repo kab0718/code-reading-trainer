@@ -177,7 +177,7 @@ GitHubページ
 
 ## 13. 次に決めること
 
-- Pythonの関数・メソッド候補を抽出する方法
+- Pythonの関数・メソッド候補を抽出する方法は[抽出方式](python-candidate-extraction.md)で決定済み
 - 評価APIの構成と認証方式
 - 学習履歴をMVPに含めるか
 - プロダクト名
