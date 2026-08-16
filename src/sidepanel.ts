@@ -40,6 +40,47 @@
       "invalid-url": "現在のページURLを確認できませんでした。",
     });
   let activePageKey: string | null = null;
+  let selectedSourceUrl: string | null = null;
+  let evaluationState: EvaluationUiState = { status: "editing" };
+  let evaluationAttempt = 0;
+  let pageContextAttempt = 0;
+  let retryAfterUntil: number | null = null;
+  let retryTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function clearRetryTimer(): void {
+    if (retryTimer !== null) {
+      clearTimeout(retryTimer);
+      retryTimer = null;
+    }
+  }
+
+  function scheduleRetryAfterCooldown(deadline: number): void {
+    if (retryAfterUntil === deadline && retryTimer !== null) return;
+
+    clearRetryTimer();
+    retryAfterUntil = deadline;
+    retryTimer = setTimeout(
+      () => {
+        retryTimer = null;
+        if (retryAfterUntil === deadline) {
+          retryAfterUntil = null;
+          if (evaluationState.status === "error") {
+            evaluationState = { ...evaluationState, retryAfterUntil: null };
+          }
+          updateInputValidation();
+        }
+      },
+      Math.max(0, deadline - Date.now()),
+    );
+    updateInputValidation();
+  }
+
+  function isEvaluationLocked(): boolean {
+    return (
+      evaluationState.status === "submitting" ||
+      evaluationState.status === "completed"
+    );
+  }
 
   async function getActiveTab(): Promise<chrome.tabs.Tab | undefined> {
     const [tab] = await chrome.tabs.query({
@@ -67,12 +108,17 @@
   }
 
   function resetSelection(): void {
+    evaluationAttempt += 1;
+    evaluationState = { status: "editing" };
+    selectedSourceUrl = null;
     selectedCodeElement.textContent = "";
     explanationElement.value = "";
+    explanationElement.readOnly = false;
     explanationElement.setAttribute("aria-invalid", "false");
     explanationCountElement.textContent = `0 / ${inputValidation.INPUT_LIMITS.explanation.toLocaleString("ja-JP")}文字`;
     inputErrorElement.textContent = "";
     evaluationButton.disabled = true;
+    evaluationButton.textContent = "評価する";
     selectionSection.hidden = true;
   }
 
@@ -83,15 +129,66 @@
     );
 
     explanationCountElement.textContent = `${validation.explanationCharacterCount.toLocaleString("ja-JP")} / ${inputValidation.INPUT_LIMITS.explanation.toLocaleString("ja-JP")}文字`;
+    const apiInputError =
+      evaluationState.status === "error" ? evaluationState.inputError : null;
+    const explanationInvalid =
+      validation.explanationError !== null ||
+      (evaluationState.status === "error" &&
+        evaluationState.explanationInvalid);
     explanationElement.setAttribute(
       "aria-invalid",
-      validation.explanationError ? "true" : "false",
+      explanationInvalid ? "true" : "false",
     );
     inputErrorElement.textContent =
-      validation.codeError ?? validation.explanationError ?? "";
-    evaluationButton.disabled = !validation.valid;
+      validation.codeError ??
+      validation.explanationError ??
+      apiInputError ??
+      "";
+    const retryWaiting =
+      retryAfterUntil !== null && retryAfterUntil > Date.now();
+    evaluationButton.disabled =
+      !validation.valid ||
+      isEvaluationLocked() ||
+      (evaluationState.status === "error" && !evaluationState.retryable) ||
+      retryWaiting;
 
     return validation;
+  }
+
+  function applyEvaluationState(nextState: EvaluationUiState): void {
+    evaluationState = nextState;
+
+    if (nextState.status === "editing") {
+      explanationElement.readOnly = false;
+      selectionButton.disabled = activePageKey === null;
+      evaluationButton.textContent = "評価する";
+    } else if (nextState.status === "submitting") {
+      explanationElement.readOnly = true;
+      selectionButton.disabled = true;
+      evaluationButton.textContent = "評価中…";
+      statusElement.textContent =
+        "回答を評価しています。このまましばらくお待ちください。";
+    } else if (nextState.status === "completed") {
+      explanationElement.readOnly = true;
+      selectionButton.disabled = true;
+      evaluationButton.textContent = "評価済み";
+      statusElement.textContent = `採点が完了しました（${nextState.response.totalScore} / 100点）。`;
+    } else {
+      if (
+        nextState.retryAfterUntil !== null &&
+        nextState.retryAfterUntil > Date.now()
+      ) {
+        scheduleRetryAfterCooldown(nextState.retryAfterUntil);
+      }
+      explanationElement.readOnly = false;
+      selectionButton.disabled = activePageKey === null;
+      evaluationButton.textContent = nextState.retryable
+        ? "もう一度評価する"
+        : "評価できません";
+      statusElement.textContent = nextState.message;
+    }
+
+    updateInputValidation();
   }
 
   function applyPageContext(context: PageContext): void {
@@ -99,14 +196,17 @@
     const nextPageKey = isEligible
       ? JSON.stringify([context.repository, context.ref, context.path])
       : null;
-    selectionButton.disabled = !isEligible;
+    selectionButton.disabled = !isEligible || isEvaluationLocked();
 
     if (isEligible) {
       if (activePageKey && activePageKey !== nextPageKey) {
         resetSelection();
       }
       activePageKey = nextPageKey;
-      statusElement.textContent = `${context.repository} の ${context.path}（${context.ref}）でトレーニングできます。`;
+      selectionButton.disabled = isEvaluationLocked();
+      if (evaluationState.status === "editing") {
+        statusElement.textContent = `${context.repository} の ${context.path}（${context.ref}）でトレーニングできます。`;
+      }
       return;
     }
 
@@ -126,9 +226,13 @@
   }
 
   async function updateStatus(): Promise<void> {
+    const attempt = ++pageContextAttempt;
     try {
-      applyPageContext(await getPageContext());
+      const context = await getPageContext();
+      if (attempt !== pageContextAttempt) return;
+      applyPageContext(context);
     } catch (error) {
+      if (attempt !== pageContextAttempt) return;
       selectionButton.disabled = true;
       resetSelection();
       statusElement.textContent = getErrorMessage(error);
@@ -136,8 +240,12 @@
   }
 
   selectionButton.addEventListener("click", async () => {
+    if (isEvaluationLocked()) return;
+
+    const attempt = ++pageContextAttempt;
     try {
       const context = await getPageContext();
+      if (attempt !== pageContextAttempt) return;
 
       if (context.status !== PAGE_STATUS.ELIGIBLE) {
         applyPageContext(context);
@@ -165,26 +273,134 @@
 
       resetSelection();
       selectedCodeElement.textContent = context.selectedText;
+      selectedSourceUrl = context.url;
       selectionSection.hidden = false;
       statusElement.textContent =
         "選択したコードを読み、自分の言葉で説明してみましょう。";
       updateInputValidation();
     } catch (error) {
+      if (attempt !== pageContextAttempt) return;
       statusElement.textContent = getErrorMessage(error);
     }
   });
 
-  explanationElement.addEventListener("input", updateInputValidation);
+  explanationElement.addEventListener("input", () => {
+    if (evaluationState.status === "error") {
+      if (retryAfterUntil !== null && retryAfterUntil > Date.now()) {
+        evaluationState = {
+          ...evaluationState,
+          explanationInvalid: false,
+          inputError: null,
+        };
+        updateInputValidation();
+        return;
+      }
+      applyEvaluationState({ status: "editing" });
+      return;
+    }
+    updateInputValidation();
+  });
 
-  selectionSection.addEventListener("submit", (event: SubmitEvent) => {
+  selectionSection.addEventListener("submit", async (event: SubmitEvent) => {
     event.preventDefault();
 
-    if (!updateInputValidation().valid) {
+    if (
+      isEvaluationLocked() ||
+      (retryAfterUntil !== null && retryAfterUntil > Date.now()) ||
+      !selectedSourceUrl ||
+      !updateInputValidation().valid
+    ) {
       return;
     }
 
-    statusElement.textContent =
-      "入力内容を確認しました。評価機能は準備中です。";
+    const request: EvaluationRequest = {
+      code: selectedCodeElement.textContent ?? "",
+      explanation: explanationElement.value,
+      language: "python",
+      sourceUrl: selectedSourceUrl,
+    };
+    const attempt = ++evaluationAttempt;
+    applyEvaluationState({ status: "submitting" });
+
+    try {
+      const permissionOrigin =
+        CodeReadingTrainerEvaluationConfig.getEvaluationApiPermissionOrigin();
+      if (permissionOrigin) {
+        const granted = await chrome.permissions.request({
+          origins: [permissionOrigin],
+        });
+        if (attempt !== evaluationAttempt) return;
+        if (!granted) {
+          applyEvaluationState({
+            explanationInvalid: false,
+            inputError: null,
+            message:
+              "評価APIへの接続が許可されませんでした。回答は保持されています。もう一度お試しください。",
+            retryAfterUntil: null,
+            retryable: true,
+            status: "error",
+          });
+          return;
+        }
+      }
+
+      const result = (await chrome.runtime.sendMessage({
+        request,
+        type: "EVALUATE_ANSWER",
+      })) as EvaluationWorkerResult | undefined;
+
+      if (!result) {
+        throw new Error("Background Workerから応答がありませんでした。");
+      }
+
+      const resultRetryAfterUntil =
+        "error" in result &&
+        result.error.code === "RATE_LIMITED" &&
+        typeof result.error.retryAfterSeconds === "number"
+          ? Date.now() + result.error.retryAfterSeconds * 1_000
+          : null;
+      if (resultRetryAfterUntil !== null) {
+        scheduleRetryAfterCooldown(resultRetryAfterUntil);
+      }
+
+      if (attempt !== evaluationAttempt) return;
+
+      if ("response" in result) {
+        applyEvaluationState({
+          response: result.response,
+          status: "completed",
+        });
+        return;
+      }
+
+      applyEvaluationState({
+        explanationInvalid:
+          result.error.details?.some(
+            (detail) => detail.field === "explanation",
+          ) ?? false,
+        inputError:
+          result.error.details && result.error.details.length > 0
+            ? result.error.details
+                .map((detail) => `${detail.field}: ${detail.reason}`)
+                .join("\n")
+            : null,
+        message: result.error.message,
+        retryAfterUntil: resultRetryAfterUntil,
+        retryable: result.error.retryable,
+        status: "error",
+      });
+    } catch {
+      if (attempt !== evaluationAttempt) return;
+      applyEvaluationState({
+        explanationInvalid: false,
+        inputError: null,
+        message:
+          "評価処理を開始できませんでした。回答は保持されています。もう一度お試しください。",
+        retryAfterUntil: null,
+        retryable: true,
+        status: "error",
+      });
+    }
   });
 
   chrome.runtime.onMessage.addListener((message: unknown) => {

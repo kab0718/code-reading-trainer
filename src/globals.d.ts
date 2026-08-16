@@ -78,5 +78,75 @@ interface InputValidationApi {
   ): TrainingInputValidation;
 }
 
+interface EvaluationRequest {
+  code: string;
+  explanation: string;
+  language: "python";
+  sourceUrl: string;
+}
+
+interface EvaluationConfigApi {
+  getEvaluationApiPermissionOrigin(): string | null;
+  getEvaluationApiUrl(): string | null;
+}
+
+interface EvaluationResponse {
+  contractVersion: "1.0";
+  criteria: Array<{
+    applicable: boolean;
+    baseWeight: number;
+    exclusionReason: string | null;
+    feedback: string | null;
+    id: string;
+    label: string;
+    maxScore: number;
+    score: number | null;
+  }>;
+  evaluatedAt: string;
+  gaps: string[];
+  modelAnswer: string;
+  requestId: string;
+  strengths: string[];
+  totalScore: number;
+}
+
+type EvaluationWorkerResult =
+  | { ok: true; response: EvaluationResponse }
+  | {
+      error: {
+        code: string;
+        details?: Array<{ field: string; reason: string }>;
+        message: string;
+        retryAfterSeconds?: number;
+        retryable: boolean;
+      };
+      ok: false;
+    };
+
+type EvaluationWorkerError = Extract<
+  EvaluationWorkerResult,
+  { ok: false }
+>["error"];
+
+interface EvaluationContractApi {
+  parseError(value: unknown): EvaluationWorkerError | null;
+  parseResponse(value: unknown): EvaluationResponse | null;
+}
+
+type EvaluationUiState =
+  | { status: "editing" }
+  | { status: "submitting" }
+  | {
+      explanationInvalid: boolean;
+      inputError: string | null;
+      message: string;
+      retryAfterUntil: number | null;
+      retryable: boolean;
+      status: "error";
+    }
+  | { response: EvaluationResponse; status: "completed" };
+
 declare var CodeReadingTrainerInputValidation: InputValidationApi;
+declare var CodeReadingTrainerEvaluationConfig: EvaluationConfigApi;
+declare var CodeReadingTrainerEvaluationContract: EvaluationContractApi;
 declare var CodeReadingTrainerPageContext: PageContextApi;
