@@ -6,6 +6,7 @@ const projectRoot = path.join(process.cwd(), "dist/extension");
 const manifestPath = path.join(projectRoot, "manifest.json");
 const allowedPermissions = new Set(["activeTab", "sidePanel", "storage"]);
 const allowedHostPermissions = new Set(["https://github.com/*"]);
+const allowedOptionalHostPermissions = new Set(["https://*.workers.dev/*"]);
 const allowedContentScriptMatches = new Set(["https://github.com/*"]);
 
 interface ExtensionManifest {
@@ -20,6 +21,7 @@ interface ExtensionManifest {
     matches?: string[];
   }>;
   host_permissions?: string[];
+  optional_host_permissions?: string[];
   icons?: Record<string, string>;
   manifest_version?: number;
   options_page?: string;
@@ -166,6 +168,18 @@ if (manifest) {
   for (const hostPermission of allowedHostPermissions) {
     if (!(manifest.host_permissions ?? []).includes(hostPermission)) {
       report(`required host permission is missing: ${hostPermission}`);
+    }
+  }
+
+  for (const hostPermission of manifest.optional_host_permissions ?? []) {
+    if (!allowedOptionalHostPermissions.has(hostPermission)) {
+      report(`unexpected optional host permission: ${hostPermission}`);
+    }
+  }
+
+  for (const hostPermission of allowedOptionalHostPermissions) {
+    if (!(manifest.optional_host_permissions ?? []).includes(hostPermission)) {
+      report(`required optional host permission is missing: ${hostPermission}`);
     }
   }
 

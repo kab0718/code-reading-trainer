@@ -78,7 +78,15 @@ Workers AIはWorkerの`AI` bindingから呼び出すため、外部AIサービ�
 npx wrangler deploy
 ```
 
-コマンドが出力した`workers.dev` URLを記録し、拡張機能の評価APIエンドポイントと接続許可先へ反映する。カスタムドメインを使う場合は、Cloudflare側のRoute設定後に同じ確認を行う。
+コマンドが出力した`workers.dev` URLを記録し、次を同じ変更で確認する。
+
+1. `src/evaluation-config.ts` の `EVALUATION_API_URL` に完全な `/v1/evaluations` URLを設定する。
+2. URLが`manifest.json`の`optional_host_permissions`（`https://*.workers.dev/*`）に収まることを確認する。
+3. `scripts/validate-extension.ts`のoptional host permission allowlistが同じpatternを維持していることを確認する。
+
+接続先はruntime storageやメッセージから変更できない。URLが未設定の配布物は権限要求も外部送信も行わず、画面へ設定エラーを返す。URL設定後はパッケージ化した拡張機能をChromeへ読み込み、送信操作時に表示される接続許可が設定済み評価APIの正確なOriginであることを確認する。許可を拒否した場合は回答が保持され、許可した場合だけBackground Workerから正常系を1件送信できることを確認する。
+
+カスタムドメインを使う場合は、`optional_host_permissions`とvalidator allowlistをその正確なOriginに変更してから、Cloudflare側のRoute設定後に同じ確認を行う。
 
 `ALLOWED_EXTENSION_IDS` が空の場合、評価リクエストは `401 UNAUTHORIZED` になる。`ALLOW_MISSING_ORIGIN=true` はCLIなど信頼済みクライアントを使うローカル検証専用とし、本番では有効にしない。
 
