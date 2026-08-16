@@ -19,7 +19,7 @@ export default defineConfig([
     rules: js.configs.recommended.rules,
   },
   {
-    files: ["scripts/**/*.mjs", "eslint.config.mjs"],
+    files: ["scripts/**/*.mjs", "tests/**/*.mjs", "eslint.config.mjs"],
     languageOptions: {
       ecmaVersion: "latest",
       sourceType: "module",
