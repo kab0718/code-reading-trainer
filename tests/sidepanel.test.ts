@@ -82,15 +82,18 @@ function createSidepanelEnvironment({
   let currentContext = eligibleContext("first.py");
   let pageContextHandler = async () => currentContext;
   let runtimeListener;
+  let tabActivatedListener;
   let evaluationHandler = async () => ({
     ok: true,
     response: evaluationResponse(),
   });
   const evaluationMessages = [];
   const permissionRequests = [];
+  let pageContextRequests = 0;
   const timers = new Map();
   let nextTimerId = 1;
   const listeners = new Map();
+  const replaceChildrenCounts = new Map();
   interface MockElement {
     [key: string]: unknown;
     disabled?: boolean;
@@ -117,6 +120,10 @@ function createSidepanelEnvironment({
       this.children.push(...children);
     },
     replaceChildren(...children) {
+      replaceChildrenCounts.set(
+        selector,
+        (replaceChildrenCounts.get(selector) ?? 0) + 1,
+      );
       this.children = children;
     },
     setAttribute(name, value) {
@@ -152,6 +159,9 @@ function createSidepanelEnvironment({
     "#gaps-list": createElement("#gaps-list", { children: [] }),
     "#user-answer": createElement("#user-answer", { textContent: "" }),
     "#model-answer": createElement("#model-answer", { textContent: "" }),
+    "#new-training-button": createElement("#new-training-button", {
+      disabled: false,
+    }),
   };
 
   const context = vm.createContext({
@@ -190,9 +200,14 @@ function createSidepanelEnvironment({
           ];
         },
         async sendMessage() {
+          pageContextRequests += 1;
           return pageContextHandler();
         },
-        onActivated: { addListener() {} },
+        onActivated: {
+          addListener(listener) {
+            tabActivatedListener = listener;
+          },
+        },
         onUpdated: { addListener() {} },
       },
     },
@@ -241,8 +256,17 @@ function createSidepanelEnvironment({
       });
       return { completion, defaultPrevented };
     },
+    startNewTraining() {
+      return listeners.get("#new-training-button:click")();
+    },
     evaluationMessages,
     permissionRequests,
+    getPageContextRequestCount() {
+      return pageContextRequests;
+    },
+    getReplaceChildrenCount(selector) {
+      return replaceChildrenCounts.get(selector) ?? 0;
+    },
     setEvaluationHandler(handler) {
       evaluationHandler = handler;
     },
@@ -254,6 +278,10 @@ function createSidepanelEnvironment({
     navigate(pageContext) {
       currentContext = pageContext;
       runtimeListener({ type: "PAGE_CONTEXT_CHANGED" });
+    },
+    activateTab(pageContext) {
+      currentContext = pageContext;
+      tabActivatedListener({ tabId: 2, windowId: 1 });
     },
     notifyPageContextChanged() {
       runtimeListener({ type: "PAGE_CONTEXT_CHANGED" });
@@ -277,6 +305,11 @@ function elementText(element) {
 test("回答フォームで1回限りのルールを明示する", () => {
   assert.match(sidepanelHtmlSource, /回答は1回限りです/u);
   assert.match(sidepanelHtmlSource, /再評価したりすることはできません/u);
+});
+
+test("採点結果から新しいトレーニングを開始できる", () => {
+  assert.match(sidepanelHtmlSource, /id="new-training-button"/u);
+  assert.match(sidepanelHtmlSource, /新しいトレーニングを始める/u);
 });
 
 test("Pythonファイル間の遷移で前の選択コードと回答を消す", async () => {
@@ -628,6 +661,122 @@ test("採点成功後は回答を固定して同じ回答を再送信できな�
   assert.match(environment.elements["#status"].textContent, /82 \/ 100点/u);
 });
 
+test("新しいトレーニングでは前のセッションを一度だけ消してページ情報を再取得する", async () => {
+  const environment = createSidepanelEnvironment();
+  await flushPromises();
+  await environment.select("return first_value");
+  environment.inputExplanation("最初の値を返します。");
+  const firstResponse = evaluationResponse();
+  firstResponse.strengths = ["戻り値を説明できています。"];
+  firstResponse.gaps = ["前提の説明が不足しています。"];
+  firstResponse.modelAnswer = "最初の模範解答です。";
+  environment.setEvaluationHandler(async () => ({
+    ok: true,
+    response: firstResponse,
+  }));
+  await environment.submit().completion;
+
+  const requestsBeforeReset = environment.getPageContextRequestCount();
+  const resetSelectors = ["#criteria-list", "#strengths-list", "#gaps-list"];
+  const replaceCountsBeforeReset = resetSelectors.map((selector) =>
+    environment.getReplaceChildrenCount(selector),
+  );
+  await Promise.all([
+    environment.startNewTraining(),
+    environment.startNewTraining(),
+  ]);
+
+  assert.equal(
+    environment.getPageContextRequestCount(),
+    requestsBeforeReset + 1,
+  );
+  for (const [index, selector] of resetSelectors.entries()) {
+    assert.equal(
+      environment.getReplaceChildrenCount(selector),
+      replaceCountsBeforeReset[index] + 1,
+    );
+  }
+  assert.equal(environment.elements["#training-methods"].hidden, false);
+  assert.equal(environment.elements["#selection"].hidden, true);
+  assert.equal(environment.elements["#evaluation-result"].hidden, true);
+  assert.equal(environment.elements["#selected-code"].textContent, "");
+  assert.equal(environment.elements["#explanation"].value, "");
+  assert.equal(environment.elements["#input-error"].textContent, "");
+  assert.equal(environment.elements["#total-score-value"].textContent, "");
+  assert.equal(environment.elements["#criteria-list"].children.length, 0);
+  assert.equal(environment.elements["#strengths-list"].children.length, 0);
+  assert.equal(environment.elements["#gaps-list"].children.length, 0);
+  assert.equal(environment.elements["#user-answer"].textContent, "");
+  assert.equal(environment.elements["#model-answer"].textContent, "");
+  assert.equal(environment.elements["#selection-button"].disabled, false);
+  assert.match(environment.elements["#status"].textContent, /first\.py/u);
+
+  await environment.submit().completion;
+  assert.equal(environment.evaluationMessages.length, 1);
+
+  await environment.select("return second_value");
+  environment.inputExplanation("次の値を返します。");
+  environment.setEvaluationHandler(async () => ({
+    ok: true,
+    response: evaluationResponse(90),
+  }));
+  await environment.submit().completion;
+
+  assert.equal(environment.evaluationMessages.length, 2);
+  assert.equal(
+    environment.evaluationMessages[1].request.code,
+    "return second_value",
+  );
+  assert.equal(
+    environment.evaluationMessages[1].request.explanation,
+    "次の値を返します。",
+  );
+});
+
+test("新しいトレーニングのページ再取得に失敗しても前の結果を残さない", async () => {
+  const environment = createSidepanelEnvironment();
+  await flushPromises();
+  await environment.select("return value");
+  environment.inputExplanation("値を返します。");
+  const response = evaluationResponse();
+  response.modelAnswer = "前の模範解答です。";
+  environment.setEvaluationHandler(async () => ({ ok: true, response }));
+  await environment.submit().completion;
+  environment.setPageContextHandler(async () => {
+    throw new Error("page context failed");
+  });
+
+  await environment.startNewTraining();
+
+  assert.equal(environment.elements["#evaluation-result"].hidden, true);
+  assert.equal(environment.elements["#selected-code"].textContent, "");
+  assert.equal(environment.elements["#explanation"].value, "");
+  assert.equal(environment.elements["#model-answer"].textContent, "");
+  assert.equal(environment.elements["#selection-button"].disabled, true);
+  assert.match(environment.elements["#status"].textContent, /取得できません/u);
+});
+
+test("新しいトレーニングの再取得先が対象外なら選択を無効にして案内する", async () => {
+  const environment = createSidepanelEnvironment();
+  await flushPromises();
+  await environment.select("return value");
+  environment.inputExplanation("値を返します。");
+  await environment.submit().completion;
+  environment.setPageContextHandler(async () => ({
+    ...eligibleContext("README.md"),
+    path: null,
+    reason: "not-python",
+    status: "unsupported",
+  }));
+
+  await environment.startNewTraining();
+
+  assert.equal(environment.elements["#evaluation-result"].hidden, true);
+  assert.equal(environment.elements["#model-answer"].textContent, "");
+  assert.equal(environment.elements["#selection-button"].disabled, true);
+  assert.match(environment.elements["#status"].textContent, /Python/u);
+});
+
 test("採点中にページが変わった場合は古い結果で新しい画面を更新しない", async () => {
   const environment = createSidepanelEnvironment();
   await flushPromises();
@@ -710,6 +859,23 @@ test("採点完了後に別ファイルへ移動すると新しい選択を開�
   assert.equal(environment.elements["#selection-button"].disabled, false);
   assert.equal(environment.elements["#selection"].hidden, true);
   assert.equal(environment.elements["#evaluation-result"].hidden, true);
+  assert.equal(environment.elements["#model-answer"].textContent, "");
+  assert.match(environment.elements["#status"].textContent, /second\.py/u);
+});
+
+test("採点完了後のタブ切り替えでは移動先に合わせて前の結果を消す", async () => {
+  const environment = createSidepanelEnvironment();
+  await flushPromises();
+  await environment.select("return first");
+  environment.inputExplanation("最初の値を返します。");
+  await environment.submit().completion;
+
+  environment.activateTab(eligibleContext("second.py"));
+  await flushPromises();
+
+  assert.equal(environment.elements["#selection-button"].disabled, false);
+  assert.equal(environment.elements["#evaluation-result"].hidden, true);
+  assert.equal(environment.elements["#explanation"].value, "");
   assert.equal(environment.elements["#model-answer"].textContent, "");
   assert.match(environment.elements["#status"].textContent, /second\.py/u);
 });

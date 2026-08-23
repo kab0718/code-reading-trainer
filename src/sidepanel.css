@@ -294,6 +294,10 @@ textarea[aria-invalid="true"] {
   margin-top: 28px;
 }
 
+#new-training-button {
+  margin-top: 28px;
+}
+
 .answer-comparison {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
