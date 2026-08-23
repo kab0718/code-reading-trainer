@@ -38,9 +38,46 @@
         <p id="input-error" class="input-error" role="alert"></p>
         <button type="submit" id="evaluation-button" disabled>評価する</button>
       </form>
+
+      <section
+        id="evaluation-result"
+        class="evaluation-result"
+        aria-labelledby="evaluation-result-title"
+        aria-live="polite"
+        hidden
+      >
+        <div class="result-heading">
+          <div>
+            <p class="result-kicker">EVALUATION RESULT</p>
+            <h2 id="evaluation-result-title">採点結果</h2>
+          </div>
+          <p class="total-score">
+            <span class="total-score-label">総合点</span>
+            <span id="total-score-value" class="total-score-value"></span>
+            <span class="total-score-maximum">/ 100点</span>
+          </p>
+        </div>
+
+        <div class="result-block">
+          <h3>観点別の得点</h3>
+          <ul id="criteria-list" class="criteria-list"></ul>
+        </div>
+
+        <div class="feedback-groups">
+          <section class="feedback-group feedback-group--strength">
+            <h3>良かった点</h3>
+            <ul id="strengths-list" class="feedback-list"></ul>
+          </section>
+          <section class="feedback-group feedback-group--gap">
+            <h3>不足していた点</h3>
+            <ul id="gaps-list" class="feedback-list"></ul>
+          </section>
+        </div>
+      </section>
     </main>
     <script src="input-validation.js"></script>
     <script src="evaluation-config.js"></script>
+    <script src="evaluation-contract.js"></script>
     <script src="sidepanel.js"></script>
   </body>
 </html>

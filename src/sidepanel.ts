@@ -19,8 +19,17 @@
   const inputErrorElement = requireElement<HTMLElement>("#input-error");
   const evaluationButton =
     requireElement<HTMLButtonElement>("#evaluation-button");
+  const evaluationResultElement =
+    requireElement<HTMLElement>("#evaluation-result");
+  const totalScoreElement = requireElement<HTMLElement>("#total-score-value");
+  const criteriaListElement =
+    requireElement<HTMLUListElement>("#criteria-list");
+  const strengthsListElement =
+    requireElement<HTMLUListElement>("#strengths-list");
+  const gapsListElement = requireElement<HTMLUListElement>("#gaps-list");
 
   const inputValidation = globalThis.CodeReadingTrainerInputValidation;
+  const evaluationContract = globalThis.CodeReadingTrainerEvaluationContract;
 
   const PAGE_STATUS = Object.freeze({
     ELIGIBLE: "eligible",
@@ -120,6 +129,76 @@
     evaluationButton.disabled = true;
     evaluationButton.textContent = "評価する";
     selectionSection.hidden = true;
+    evaluationResultElement.hidden = true;
+    totalScoreElement.textContent = "";
+    criteriaListElement.replaceChildren();
+    strengthsListElement.replaceChildren();
+    gapsListElement.replaceChildren();
+  }
+
+  function appendFeedbackItems(
+    list: HTMLUListElement,
+    items: readonly string[],
+    emptyMessage: string,
+  ): void {
+    list.replaceChildren();
+
+    if (items.length === 0) {
+      const emptyItem = document.createElement("li");
+      emptyItem.className = "feedback-empty";
+      emptyItem.textContent = emptyMessage;
+      list.append(emptyItem);
+      return;
+    }
+
+    for (const item of items) {
+      const listItem = document.createElement("li");
+      listItem.textContent = item;
+      list.append(listItem);
+    }
+  }
+
+  function renderEvaluationResult(response: EvaluationResponse): void {
+    totalScoreElement.textContent = response.totalScore.toLocaleString("ja-JP");
+    criteriaListElement.replaceChildren();
+
+    for (const criterion of response.criteria) {
+      if (!criterion.applicable) continue;
+
+      const listItem = document.createElement("li");
+      listItem.className = "criterion";
+
+      const heading = document.createElement("div");
+      heading.className = "criterion-heading";
+
+      const label = document.createElement("span");
+      label.className = "criterion-label";
+      label.textContent = criterion.label;
+
+      const score = document.createElement("span");
+      score.className = "criterion-score";
+      score.textContent = `${criterion.score} / ${criterion.maxScore}点`;
+
+      const feedback = document.createElement("p");
+      feedback.className = "criterion-feedback";
+      feedback.textContent = criterion.feedback;
+
+      heading.append(label, score);
+      listItem.append(heading, feedback);
+      criteriaListElement.append(listItem);
+    }
+
+    appendFeedbackItems(
+      strengthsListElement,
+      response.strengths,
+      "特に挙げられた点はありません。",
+    );
+    appendFeedbackItems(
+      gapsListElement,
+      response.gaps,
+      "不足点は挙げられていません。",
+    );
+    evaluationResultElement.hidden = false;
   }
 
   function updateInputValidation(): TrainingInputValidation {
@@ -173,6 +252,7 @@
       selectionButton.disabled = true;
       evaluationButton.textContent = "評価済み";
       statusElement.textContent = `採点が完了しました（${nextState.response.totalScore} / 100点）。`;
+      renderEvaluationResult(nextState.response);
     } else {
       if (
         nextState.retryAfterUntil !== null &&
@@ -366,8 +446,21 @@
       if (attempt !== evaluationAttempt) return;
 
       if ("response" in result) {
+        const response = evaluationContract.parseResponse(result.response);
+        if (!response) {
+          applyEvaluationState({
+            explanationInvalid: false,
+            inputError: null,
+            message:
+              "採点結果を正しく読み取れませんでした。回答は保持されています。もう一度お試しください。",
+            retryAfterUntil: null,
+            retryable: true,
+            status: "error",
+          });
+          return;
+        }
         applyEvaluationState({
-          response: result.response,
+          response,
           status: "completed",
         });
         return;
