@@ -16,6 +16,10 @@ const evaluationConfigSource = await readFile(
   path.join(process.cwd(), "dist/extension/src/evaluation-config.js"),
   "utf8",
 );
+const evaluationContractSource = await readFile(
+  path.join(process.cwd(), "dist/extension/src/evaluation-contract.js"),
+  "utf8",
+);
 
 function eligibleContext(filePath) {
   return {
@@ -30,11 +34,36 @@ function eligibleContext(filePath) {
 }
 
 function evaluationResponse(totalScore = 82) {
+  let remainingScore = totalScore;
+  const criteriaDefinitions: ReadonlyArray<readonly [string, string, number]> =
+    [
+      ["purpose", "目的・責務", 25],
+      ["inputs_outputs", "入出力", 15],
+      ["main_flow", "主要処理", 25],
+      ["branches_errors", "分岐・例外", 15],
+      ["side_effects", "副作用", 10],
+      ["assumptions_dependencies", "前提・依存", 10],
+    ];
+  const criteria = criteriaDefinitions.map(([id, label, baseWeight]) => {
+    const score = Math.min(baseWeight, remainingScore);
+    remainingScore -= score;
+    return {
+      applicable: true,
+      baseWeight,
+      exclusionReason: null,
+      feedback: `${label}についてのフィードバックです。`,
+      id,
+      label,
+      maxScore: baseWeight,
+      score,
+    };
+  });
+
   return {
-    requestId: "request-id",
+    requestId: "4fd0d833-6bad-4d6e-b2e2-7fd9ba73710b",
     contractVersion: "1.0",
     totalScore,
-    criteria: [],
+    criteria,
     strengths: [],
     gaps: [],
     modelAnswer: "模範解答",
@@ -64,7 +93,11 @@ function createSidepanelEnvironment({
     hidden?: boolean;
     textContent?: string;
     value?: string;
+    children?: MockElement[];
+    className?: string;
     addEventListener(type: string, listener: unknown): void;
+    append(...children: MockElement[]): void;
+    replaceChildren(...children: MockElement[]): void;
     setAttribute(name: string, value: string): void;
   }
   const createElement = (
@@ -74,6 +107,13 @@ function createSidepanelEnvironment({
     ...properties,
     addEventListener(type, listener) {
       listeners.set(`${selector}:${type}`, listener);
+    },
+    append(...children) {
+      this.children ??= [];
+      this.children.push(...children);
+    },
+    replaceChildren(...children) {
+      this.children = children;
     },
     setAttribute(name, value) {
       this[name] = value;
@@ -94,6 +134,15 @@ function createSidepanelEnvironment({
     "#evaluation-button": createElement("#evaluation-button", {
       disabled: true,
     }),
+    "#evaluation-result": createElement("#evaluation-result", {
+      hidden: true,
+    }),
+    "#total-score-value": createElement("#total-score-value", {
+      textContent: "",
+    }),
+    "#criteria-list": createElement("#criteria-list", { children: [] }),
+    "#strengths-list": createElement("#strengths-list", { children: [] }),
+    "#gaps-list": createElement("#gaps-list", { children: [] }),
   };
 
   const context = vm.createContext({
@@ -139,6 +188,9 @@ function createSidepanelEnvironment({
       },
     },
     document: {
+      createElement(tagName) {
+        return createElement(`<${tagName}>`, { children: [] });
+      },
       querySelector(selector) {
         return elements[selector];
       },
@@ -152,6 +204,7 @@ function createSidepanelEnvironment({
 
   vm.runInContext(inputValidationSource, context);
   vm.runInContext(evaluationConfigSource, context);
+  vm.runInContext(evaluationContractSource, context);
   if (permissionOrigin !== null) {
     context.CodeReadingTrainerEvaluationConfig = Object.freeze({
       getEvaluationApiPermissionOrigin: () => permissionOrigin,
@@ -204,6 +257,12 @@ function createSidepanelEnvironment({
 
 async function flushPromises() {
   await new Promise((resolve) => setImmediate(resolve));
+}
+
+function elementText(element) {
+  return `${element.textContent ?? ""}${(element.children ?? [])
+    .map(elementText)
+    .join("")}`;
 }
 
 test("Pythonファイル間の遷移で前の選択コードと回答を消す", async () => {
@@ -275,6 +334,79 @@ test("外部入力をHTMLではなくテキストとして表示する", async (
   assert.equal(environment.elements["#selected-code"].textContent, code);
   assert.equal(environment.elements["#explanation"].value, explanation);
   assert.equal(environment.elements["#evaluation-button"].disabled, false);
+});
+
+test("採点結果を表示し、対象外の評価軸を除外する", async () => {
+  const environment = createSidepanelEnvironment();
+  await flushPromises();
+  await environment.select("def example():\n    return 1");
+  environment.inputExplanation("値1を返す関数です。");
+
+  const response = evaluationResponse(100);
+  const purpose = response.criteria.find(({ id }) => id === "purpose");
+  purpose.maxScore = 35;
+  const excluded = response.criteria.find(({ id }) => id === "side_effects");
+  excluded.applicable = false;
+  excluded.exclusionReason = "副作用を持たないため対象外です。";
+  excluded.feedback = null;
+  excluded.maxScore = 0;
+  excluded.score = null;
+  response.totalScore = 90;
+  response.strengths = [
+    '<script>alert("strength")</script>',
+    "戻り値を説明できています。",
+  ];
+  response.gaps = ["呼び出し条件の説明が不足しています。"];
+  const mainFlow = response.criteria.find(({ id }) => id === "main_flow");
+  mainFlow.feedback = '<img src=x onerror="alert(1)">';
+  environment.setEvaluationHandler(async () => ({ ok: true, response }));
+
+  await environment.submit().completion;
+
+  assert.equal(environment.elements["#evaluation-result"].hidden, false);
+  assert.equal(environment.elements["#total-score-value"].textContent, "90");
+  assert.equal(environment.elements["#criteria-list"].children.length, 5);
+  assert.doesNotMatch(
+    elementText(environment.elements["#criteria-list"]),
+    /副作用/u,
+  );
+  assert.match(
+    elementText(environment.elements["#criteria-list"]),
+    /<img src=x onerror="alert\(1\)">/u,
+  );
+  assert.equal(
+    environment.elements["#strengths-list"].children[0].textContent,
+    '<script>alert("strength")</script>',
+  );
+  assert.match(
+    elementText(environment.elements["#gaps-list"]),
+    /呼び出し条件の説明が不足/u,
+  );
+});
+
+test("不正な採点結果を表示せず回答を保持して再試行できる", async () => {
+  const environment = createSidepanelEnvironment();
+  await flushPromises();
+  await environment.select("return value");
+  const answer = "値を返します。";
+  environment.inputExplanation(answer);
+  const invalidResponse = evaluationResponse();
+  invalidResponse.totalScore = 101;
+  environment.setEvaluationHandler(async () => ({
+    ok: true,
+    response: invalidResponse,
+  }));
+
+  await environment.submit().completion;
+
+  assert.equal(environment.elements["#evaluation-result"].hidden, true);
+  assert.equal(environment.elements["#explanation"].value, answer);
+  assert.equal(environment.elements["#explanation"].readOnly, false);
+  assert.equal(environment.elements["#evaluation-button"].disabled, false);
+  assert.match(
+    environment.elements["#status"].textContent,
+    /採点結果を正しく読み取れません/u,
+  );
 });
 
 test("採点中は入力と送信を固定して二重送信を防ぐ", async () => {
