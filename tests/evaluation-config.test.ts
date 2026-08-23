@@ -18,6 +18,10 @@ test("評価API URLが未決定の配布物は外部送信先を持たない", (
     null,
   );
   assert.equal(
+    context.CodeReadingTrainerEvaluationConfig.getReadingSupportApiUrl(),
+    null,
+  );
+  assert.equal(
     context.CodeReadingTrainerEvaluationConfig.getEvaluationApiPermissionOrigin(),
     null,
   );
@@ -25,6 +29,7 @@ test("評価API URLが未決定の配布物は外部送信先を持たない", (
   assert.deepEqual(Object.keys(context.CodeReadingTrainerEvaluationConfig), [
     "getEvaluationApiPermissionOrigin",
     "getEvaluationApiUrl",
+    "getReadingSupportApiUrl",
   ]);
   assert.doesNotMatch(evaluationConfigSource, /chrome\.storage|onMessage/u);
 });

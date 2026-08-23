@@ -2,7 +2,7 @@
 
 GitHub上のPythonコードを自分の力で読み解くためのChrome拡張です。理解を説明して採点を受けるトレーニングと、実際のOSS読解で着眼点や段階的なヒントを得る読解サポートを提供します。
 
-現在は企画・初期設計段階です。プロダクトの狙い、MVP、学習体験、評価方針は [`docs/product-overview.md`](docs/product-overview.md)、Python関数・メソッド候補の抽出方式は [`docs/python-candidate-extraction.md`](docs/python-candidate-extraction.md)、評価の配点とAPI契約は [`docs/evaluation-api-contract.md`](docs/evaluation-api-contract.md)、評価APIの構成と運用は [`docs/evaluation-api-operations.md`](docs/evaluation-api-operations.md)、今後の作業手順と完了条件は [`docs/implementation-plan.md`](docs/implementation-plan.md) にまとめています。
+プロダクトの狙い、MVP、学習体験、評価方針は [`docs/product-overview.md`](docs/product-overview.md)、Python関数・メソッド候補の抽出方式は [`docs/python-candidate-extraction.md`](docs/python-candidate-extraction.md)、評価の配点とAPI契約は [`docs/evaluation-api-contract.md`](docs/evaluation-api-contract.md)、読解サポートAPIの段階と契約は [`docs/reading-support-api-contract.md`](docs/reading-support-api-contract.md)、評価APIの構成と運用は [`docs/evaluation-api-operations.md`](docs/evaluation-api-operations.md)、今後の作業手順と完了条件は [`docs/implementation-plan.md`](docs/implementation-plan.md) にまとめています。
 
 ## 想定する体験
 
@@ -25,21 +25,24 @@ code-reading-trainer/
 │   ├── evaluation-api-operations.md
 │   ├── implementation-plan.md
 │   ├── python-candidate-extraction.md
+│   ├── reading-support-api-contract.md
 │   └── product-overview.md
 ├── api/
 │   ├── evaluation.ts
+│   ├── reading-support.ts
 │   ├── workers-ai.ts
+│   ├── workers-reading-support.ts
 │   └── worker.ts
-├── contracts/evaluation/v1/
-│   ├── evaluation-error.schema.json
-│   ├── evaluation-request.schema.json
-│   ├── evaluation-response.schema.json
-│   └── examples/
+├── contracts/
+│   ├── evaluation/v1/
+│   └── reading-support/v1/
 ├── src/
+│   ├── analytics.ts
 │   ├── background.ts
 │   ├── content.ts
 │   ├── input-validation.ts
 │   ├── page-context.ts
+│   ├── reading-support-contract.ts
 │   ├── sidepanel.css
 │   ├── sidepanel.html
 │   └── sidepanel.ts

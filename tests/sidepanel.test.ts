@@ -20,6 +20,14 @@ const evaluationContractSource = await readFile(
   path.join(process.cwd(), "dist/extension/src/evaluation-contract.js"),
   "utf8",
 );
+const readingSupportContractSource = await readFile(
+  path.join(process.cwd(), "dist/extension/src/reading-support-contract.js"),
+  "utf8",
+);
+const analyticsSource = await readFile(
+  path.join(process.cwd(), "dist/extension/src/analytics.js"),
+  "utf8",
+);
 const sidepanelHtmlSource = await readFile(
   path.join(process.cwd(), "src/sidepanel.html"),
   "utf8",
@@ -75,6 +83,27 @@ function evaluationResponse(totalScore = 82) {
   };
 }
 
+function readingSupportResponse(stage = "guide") {
+  return {
+    requestId: "57d8d07a-2596-4f11-851d-ace9b27b25d1",
+    contractVersion: "1.0",
+    stage,
+    focusPoints: stage === "guide" ? ["value の流れに注目します。"] : [],
+    checks: stage === "guide" ? ["value の入力元を確認します。"] : [],
+    questions: stage === "guide" ? ["value はいつ返されますか？"] : [],
+    hints: stage === "guide" ? ["return value を追ってみましょう。"] : [],
+    nextCandidates:
+      stage === "guide"
+        ? [{ symbol: "value", reason: "値の定義を確認するためです。" }]
+        : [],
+    detailedExplanation:
+      stage === "detailed_explanation"
+        ? "return は value を呼び出し元へ返します。"
+        : null,
+    generatedAt: "2026-08-24T00:00:00Z",
+  };
+}
+
 function createSidepanelEnvironment({
   permissionGranted = true,
   permissionOrigin = null,
@@ -87,6 +116,10 @@ function createSidepanelEnvironment({
     ok: true,
     response: evaluationResponse(),
   });
+  let readingHandler = async (message) => ({
+    ok: true,
+    response: readingSupportResponse(message.request.stage),
+  });
   const evaluationMessages = [];
   const permissionRequests = [];
   let pageContextRequests = 0;
@@ -94,6 +127,7 @@ function createSidepanelEnvironment({
   let nextTimerId = 1;
   const listeners = new Map();
   const replaceChildrenCounts = new Map();
+  const storage: Record<string, unknown> = {};
   interface MockElement {
     [key: string]: unknown;
     disabled?: boolean;
@@ -140,6 +174,10 @@ function createSidepanelEnvironment({
     }),
     "#selection": createElement("#selection", { hidden: true }),
     "#selected-code": createElement("#selected-code", { textContent: "" }),
+    "#training-input": createElement("#training-input", { hidden: false }),
+    "#reading-input": createElement("#reading-input", { hidden: true }),
+    "#training-mode-button": createElement("#training-mode-button", {}),
+    "#reading-mode-button": createElement("#reading-mode-button", {}),
     "#explanation": createElement("#explanation", { value: "" }),
     "#explanation-count": createElement("#explanation-count", {
       textContent: "",
@@ -162,6 +200,43 @@ function createSidepanelEnvironment({
     "#new-training-button": createElement("#new-training-button", {
       disabled: false,
     }),
+    "#reading-question": createElement("#reading-question", { value: "" }),
+    "#reading-question-count": createElement("#reading-question-count", {
+      textContent: "",
+    }),
+    "#reading-input-error": createElement("#reading-input-error", {
+      textContent: "",
+    }),
+    "#reading-submit-button": createElement("#reading-submit-button", {
+      disabled: true,
+    }),
+    "#reading-result": createElement("#reading-result", { hidden: true }),
+    "#focus-points-list": createElement("#focus-points-list", { children: [] }),
+    "#checks-list": createElement("#checks-list", { children: [] }),
+    "#reading-questions-list": createElement("#reading-questions-list", {
+      children: [],
+    }),
+    "#hints-list": createElement("#hints-list", { children: [] }),
+    "#next-candidates-block": createElement("#next-candidates-block", {
+      hidden: false,
+    }),
+    "#next-candidates-list": createElement("#next-candidates-list", {
+      children: [],
+    }),
+    "#reading-result-error": createElement("#reading-result-error", {
+      textContent: "",
+    }),
+    "#detail-button": createElement("#detail-button", { disabled: false }),
+    "#detailed-explanation-block": createElement(
+      "#detailed-explanation-block",
+      { hidden: true },
+    ),
+    "#detailed-explanation": createElement("#detailed-explanation", {
+      textContent: "",
+    }),
+    "#complete-reading-button": createElement("#complete-reading-button", {
+      disabled: false,
+    }),
   };
 
   const context = vm.createContext({
@@ -178,10 +253,22 @@ function createSidepanelEnvironment({
           return permissionGranted;
         },
       },
+      storage: {
+        local: {
+          async get(key) {
+            return { [key]: storage[key] };
+          },
+          async set(values) {
+            Object.assign(storage, values);
+          },
+        },
+      },
       runtime: {
         async sendMessage(message) {
           evaluationMessages.push(message);
-          return evaluationHandler();
+          return message.type === "REQUEST_READING_SUPPORT"
+            ? readingHandler(message)
+            : evaluationHandler();
         },
         onMessage: {
           addListener(listener) {
@@ -229,10 +316,13 @@ function createSidepanelEnvironment({
   vm.runInContext(inputValidationSource, context);
   vm.runInContext(evaluationConfigSource, context);
   vm.runInContext(evaluationContractSource, context);
+  vm.runInContext(readingSupportContractSource, context);
+  vm.runInContext(analyticsSource, context);
   if (permissionOrigin !== null) {
     context.CodeReadingTrainerEvaluationConfig = Object.freeze({
       getEvaluationApiPermissionOrigin: () => permissionOrigin,
       getEvaluationApiUrl: () => null,
+      getReadingSupportApiUrl: () => null,
     });
   }
   vm.runInContext(sidepanelSource, context);
@@ -246,6 +336,25 @@ function createSidepanelEnvironment({
     inputExplanation(value) {
       elements["#explanation"].value = value;
       listeners.get("#explanation:input")();
+    },
+    chooseReadingMode() {
+      return listeners.get("#reading-mode-button:click")();
+    },
+    chooseTrainingMode() {
+      return listeners.get("#training-mode-button:click")();
+    },
+    inputReadingQuestion(value) {
+      elements["#reading-question"].value = value;
+      listeners.get("#reading-question:input")();
+    },
+    requestReadingGuide() {
+      return listeners.get("#reading-submit-button:click")();
+    },
+    requestDetail() {
+      return listeners.get("#detail-button:click")();
+    },
+    completeReading() {
+      return listeners.get("#complete-reading-button:click")();
     },
     submit() {
       let defaultPrevented = false;
@@ -270,6 +379,10 @@ function createSidepanelEnvironment({
     setEvaluationHandler(handler) {
       evaluationHandler = handler;
     },
+    setReadingHandler(handler) {
+      readingHandler = handler;
+    },
+    storage,
     runTimers() {
       const callbacks = [...timers.values()];
       timers.clear();
@@ -310,6 +423,252 @@ test("回答フォームで1回限りのルールを明示する", () => {
 test("採点結果から新しいトレーニングを開始できる", () => {
   assert.match(sidepanelHtmlSource, /id="new-training-button"/u);
   assert.match(sidepanelHtmlSource, /新しいトレーニングを始める/u);
+});
+
+test("選択コードでトレーニングと読解サポートを切り替え、入力を分離する", async () => {
+  const environment = createSidepanelEnvironment();
+  await flushPromises();
+  await environment.select("return value");
+  environment.inputExplanation("値を返します。");
+
+  environment.chooseReadingMode();
+  assert.equal(environment.elements["#training-input"].hidden, true);
+  assert.equal(environment.elements["#reading-input"].hidden, false);
+  environment.inputReadingQuestion("value の由来を確認したい");
+  assert.equal(environment.elements["#reading-submit-button"].disabled, false);
+
+  environment.chooseTrainingMode();
+  assert.equal(environment.elements["#explanation"].value, "値を返します。");
+  assert.equal(
+    environment.elements["#reading-question"].value,
+    "value の由来を確認したい",
+  );
+  assert.equal(environment.elements["#reading-result"].hidden, true);
+});
+
+test("最初は着眼点・確認事項・質問・ヒントを表示し詳しい説明は隠す", async () => {
+  const environment = createSidepanelEnvironment();
+  await flushPromises();
+  await environment.select("return value");
+  environment.chooseReadingMode();
+  environment.inputReadingQuestion("value の流れを理解したい");
+  environment.requestReadingGuide();
+  await flushPromises();
+
+  assert.equal(environment.evaluationMessages.length, 1);
+  assert.equal(
+    environment.evaluationMessages[0].type,
+    "REQUEST_READING_SUPPORT",
+  );
+  assert.equal(environment.evaluationMessages[0].request.stage, "guide");
+  assert.equal(environment.elements["#selection"].hidden, true);
+  assert.equal(environment.elements["#reading-result"].hidden, false);
+  assert.match(
+    elementText(environment.elements["#focus-points-list"]),
+    /value/u,
+  );
+  assert.match(elementText(environment.elements["#checks-list"]), /value/u);
+  assert.match(
+    elementText(environment.elements["#reading-questions-list"]),
+    /value/u,
+  );
+  assert.match(elementText(environment.elements["#hints-list"]), /return/u);
+  assert.equal(
+    environment.elements["#detailed-explanation-block"].hidden,
+    true,
+  );
+});
+
+test("明示操作後だけ詳しい説明を追加取得して表示する", async () => {
+  const environment = createSidepanelEnvironment();
+  await flushPromises();
+  await environment.select("return value");
+  environment.chooseReadingMode();
+  environment.inputReadingQuestion("value の流れを理解したい");
+  environment.requestReadingGuide();
+  await flushPromises();
+  assert.equal(environment.evaluationMessages.length, 1);
+
+  environment.requestDetail();
+  await flushPromises();
+  assert.equal(environment.evaluationMessages.length, 2);
+  assert.equal(
+    environment.evaluationMessages[1].request.stage,
+    "detailed_explanation",
+  );
+  assert.equal(
+    environment.elements["#detailed-explanation-block"].hidden,
+    false,
+  );
+  assert.match(
+    environment.elements["#detailed-explanation"].textContent,
+    /value/u,
+  );
+});
+
+test("読解サポートのAPIエラーでも質問を保持して再試行できる", async () => {
+  const environment = createSidepanelEnvironment();
+  await flushPromises();
+  await environment.select("return value");
+  environment.chooseReadingMode();
+  const question = "value の流れを理解したい";
+  environment.inputReadingQuestion(question);
+  let calls = 0;
+  environment.setReadingHandler(async (message) => {
+    calls += 1;
+    if (calls === 1) {
+      return {
+        ok: false,
+        error: {
+          code: "READING_SUPPORT_MODEL_ERROR",
+          details: [],
+          message: "ガイドを作成できませんでした。",
+          retryable: true,
+        },
+      };
+    }
+    return {
+      ok: true,
+      response: readingSupportResponse(message.request.stage),
+    };
+  });
+  environment.requestReadingGuide();
+  await flushPromises();
+  assert.equal(environment.elements["#reading-question"].value, question);
+  assert.equal(environment.elements["#reading-submit-button"].disabled, false);
+  assert.match(environment.elements["#status"].textContent, /保持/u);
+
+  environment.requestReadingGuide();
+  await flushPromises();
+  assert.equal(calls, 2);
+  assert.equal(environment.elements["#reading-result"].hidden, false);
+});
+
+test("読解エラーはモード切替と同一ページ更新後も理由を表示する", async () => {
+  const environment = createSidepanelEnvironment();
+  await flushPromises();
+  await environment.select("return value");
+  environment.chooseReadingMode();
+  environment.inputReadingQuestion("value を確認したい");
+  environment.setReadingHandler(async () => ({
+    ok: false,
+    error: {
+      code: "UNAUTHORIZED",
+      details: [],
+      message: "このAPIを利用できません。",
+      retryable: false,
+    },
+  }));
+  environment.requestReadingGuide();
+  await flushPromises();
+
+  environment.chooseTrainingMode();
+  environment.chooseReadingMode();
+  assert.match(environment.elements["#status"].textContent, /利用できません/u);
+  assert.equal(environment.elements["#reading-submit-button"].disabled, true);
+
+  environment.notifyPageContextChanged();
+  await flushPromises();
+  assert.match(environment.elements["#status"].textContent, /利用できません/u);
+});
+
+test("詳しい説明の回数制限中は期限まで再試行ボタンを無効にする", async () => {
+  const environment = createSidepanelEnvironment();
+  await flushPromises();
+  await environment.select("return value");
+  environment.chooseReadingMode();
+  environment.inputReadingQuestion("value を確認したい");
+  environment.requestReadingGuide();
+  await flushPromises();
+  environment.setReadingHandler(async () => ({
+    ok: false,
+    error: {
+      code: "RATE_LIMITED",
+      details: [],
+      message: "利用回数の上限に達しました。",
+      retryable: true,
+      retryAfterSeconds: 60,
+    },
+  }));
+
+  environment.requestDetail();
+  await flushPromises();
+  assert.equal(environment.elements["#detail-button"].disabled, true);
+  assert.match(environment.elements["#detail-button"].textContent, /待機中/u);
+  environment.runTimers();
+  assert.equal(environment.elements["#detail-button"].disabled, false);
+  assert.match(
+    environment.elements["#detail-button"].textContent,
+    /もう一度取得/u,
+  );
+});
+
+test("ページ遷移後に届いた読解の回数制限も新しい入力を期限まで止める", async () => {
+  const environment = createSidepanelEnvironment();
+  await flushPromises();
+  await environment.select("return old_value");
+  environment.chooseReadingMode();
+  environment.inputReadingQuestion("old_value を確認したい");
+  let finishReading;
+  environment.setReadingHandler(
+    () =>
+      new Promise((resolve) => {
+        finishReading = resolve;
+      }),
+  );
+  environment.requestReadingGuide();
+  await flushPromises();
+
+  environment.navigate(eligibleContext("second.py"));
+  await flushPromises();
+  await environment.select("return new_value");
+  environment.chooseReadingMode();
+  environment.inputReadingQuestion("new_value を確認したい");
+  assert.equal(environment.elements["#reading-submit-button"].disabled, false);
+
+  finishReading({
+    ok: false,
+    error: {
+      code: "RATE_LIMITED",
+      details: [],
+      message: "利用回数の上限に達しました。",
+      retryable: true,
+      retryAfterSeconds: 60,
+    },
+  });
+  await flushPromises();
+  assert.equal(environment.elements["#reading-submit-button"].disabled, true);
+  environment.runTimers();
+  assert.equal(environment.elements["#reading-submit-button"].disabled, false);
+});
+
+test("読解サポートの計測イベントにコード・質問本文を保存しない", async () => {
+  const environment = createSidepanelEnvironment();
+  await flushPromises();
+  const code = "return sensitive_code";
+  const question = "sensitive_question を確認したい";
+  await environment.select(code);
+  environment.chooseReadingMode();
+  environment.inputReadingQuestion(question);
+  environment.requestReadingGuide();
+  await flushPromises();
+  environment.requestDetail();
+  await flushPromises();
+  await environment.completeReading();
+  await flushPromises();
+
+  const events = environment.storage.anonymousUsageEvents as Array<{
+    name: string;
+  }>;
+  const serialized = JSON.stringify(events);
+  assert.doesNotMatch(serialized, /sensitive_code/u);
+  assert.doesNotMatch(serialized, /sensitive_question/u);
+  assert.deepEqual(JSON.parse(JSON.stringify(events.map(({ name }) => name))), [
+    "reading_support_started",
+    "reading_support_guide_displayed",
+    "reading_support_detail_displayed",
+    "reading_support_completed",
+  ]);
 });
 
 test("Pythonファイル間の遷移で前の選択コードと回答を消す", async () => {

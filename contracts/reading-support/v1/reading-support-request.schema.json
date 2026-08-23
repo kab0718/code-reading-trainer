@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://code-reading-trainer.example/contracts/reading-support/v1/reading-support-request.schema.json",
+  "title": "ReadingSupportRequestV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["language", "sourceUrl", "code", "question", "stage"],
+  "properties": {
+    "language": { "const": "python" },
+    "sourceUrl": {
+      "type": "string",
+      "format": "uri",
+      "maxLength": 2048,
+      "pattern": "^https://github\\.com/[^/]+/[^/]+/blob/.+\\.py(?:[?#].*)?$"
+    },
+    "code": { "type": "string", "minLength": 1, "maxLength": 30000 },
+    "question": { "type": "string", "minLength": 1, "maxLength": 2000 },
+    "stage": { "enum": ["guide", "detailed_explanation"] }
+  }
+}

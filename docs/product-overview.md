@@ -211,6 +211,6 @@ GitHubページ
 
 - Pythonの関数・メソッド候補を抽出する方法は[抽出方式](python-candidate-extraction.md)で決定済み
 - 評価APIの構成と認証方式
-- 読解サポートAPIの契約と評価APIとの共通化範囲
+- 読解サポートAPIの契約と共通化範囲は[読解サポートAPI契約 v1](reading-support-api-contract.md)で決定済み
 - 学習履歴をMVPに含めるか
 - プロダクト名

@@ -25,21 +25,65 @@
       <form id="selection" hidden novalidate>
         <h2>選択中のコード</h2>
         <pre><code id="selected-code"></code></pre>
-        <label for="explanation"
-          >このコードが何をしているか、自分の言葉で説明してください</label
-        >
-        <textarea
-          id="explanation"
-          rows="8"
-          aria-describedby="explanation-count input-error"
-          placeholder="目的、主要な処理、分岐や副作用などを説明してみましょう"
-        ></textarea>
-        <p id="explanation-count" class="character-count"></p>
-        <p id="input-error" class="input-error" role="alert"></p>
-        <p class="one-attempt-note">
-          回答は1回限りです。採点後に回答を書き直したり、再評価したりすることはできません。
-        </p>
-        <button type="submit" id="evaluation-button" disabled>評価する</button>
+        <fieldset id="mode-selector" class="mode-selector">
+          <legend>目的を選ぶ</legend>
+          <div class="mode-buttons">
+            <button
+              type="button"
+              id="training-mode-button"
+              class="mode-button is-selected"
+              aria-pressed="true"
+            >
+              トレーニング
+            </button>
+            <button
+              type="button"
+              id="reading-mode-button"
+              class="mode-button"
+              aria-pressed="false"
+            >
+              読解サポート
+            </button>
+          </div>
+        </fieldset>
+
+        <section id="training-input">
+          <label for="explanation"
+            >このコードが何をしているか、自分の言葉で説明してください</label
+          >
+          <textarea
+            id="explanation"
+            rows="8"
+            aria-describedby="explanation-count input-error"
+            placeholder="目的、主要な処理、分岐や副作用などを説明してみましょう"
+          ></textarea>
+          <p id="explanation-count" class="character-count"></p>
+          <p id="input-error" class="input-error" role="alert"></p>
+          <p class="one-attempt-note">
+            回答は1回限りです。採点後に回答を書き直したり、再評価したりすることはできません。
+          </p>
+          <button type="submit" id="evaluation-button" disabled>
+            評価する
+          </button>
+        </section>
+
+        <section id="reading-input" hidden>
+          <label for="reading-question">分からない点または調査目的</label>
+          <textarea
+            id="reading-question"
+            rows="6"
+            aria-describedby="reading-question-count reading-input-error"
+            placeholder="例: この分岐が必要な理由と、次に確認すべき関数を知りたい"
+          ></textarea>
+          <p id="reading-question-count" class="character-count"></p>
+          <p id="reading-input-error" class="input-error" role="alert"></p>
+          <p class="privacy-note">
+            選択コードとこの入力はAIへ送信しますが、履歴や計測イベントには保存しません。
+          </p>
+          <button type="button" id="reading-submit-button" disabled>
+            読むためのガイドを受け取る
+          </button>
+        </section>
       </form>
 
       <section
@@ -95,10 +139,52 @@
           新しいトレーニングを始める
         </button>
       </section>
+
+      <section
+        id="reading-result"
+        class="reading-result"
+        aria-labelledby="reading-result-title"
+        aria-live="polite"
+        hidden
+      >
+        <p class="result-kicker">READING GUIDE</p>
+        <h2 id="reading-result-title">読むためのガイド</h2>
+        <div class="reading-block">
+          <h3>注目するところ</h3>
+          <ul id="focus-points-list" class="reading-list"></ul>
+        </div>
+        <div class="reading-block">
+          <h3>確認する前提・入出力・分岐・副作用</h3>
+          <ul id="checks-list" class="reading-list"></ul>
+        </div>
+        <div class="reading-block">
+          <h3>自分で確かめる質問</h3>
+          <ul id="reading-questions-list" class="reading-list"></ul>
+        </div>
+        <div class="reading-block reading-block--hint">
+          <h3>段階的なヒント</h3>
+          <ol id="hints-list" class="reading-list"></ol>
+        </div>
+        <div id="next-candidates-block" class="reading-block">
+          <h3>次に確認する候補</h3>
+          <ul id="next-candidates-list" class="reading-list"></ul>
+        </div>
+        <p id="reading-result-error" class="input-error" role="alert"></p>
+        <button type="button" id="detail-button">詳しい説明を見る</button>
+        <div id="detailed-explanation-block" class="reading-block" hidden>
+          <h3>詳しい説明</h3>
+          <p id="detailed-explanation" class="answer-text"></p>
+        </div>
+        <button type="button" id="complete-reading-button">
+          読解サポートを完了する
+        </button>
+      </section>
     </main>
     <script src="input-validation.js"></script>
     <script src="evaluation-config.js"></script>
     <script src="evaluation-contract.js"></script>
+    <script src="reading-support-contract.js"></script>
+    <script src="analytics.js"></script>
     <script src="sidepanel.js"></script>
   </body>
 </html>

@@ -14,6 +14,14 @@
     requireElement<HTMLButtonElement>("#selection-button");
   const selectionSection = requireElement<HTMLFormElement>("#selection");
   const selectedCodeElement = requireElement<HTMLElement>("#selected-code");
+  const trainingInputElement = requireElement<HTMLElement>("#training-input");
+  const readingInputElement = requireElement<HTMLElement>("#reading-input");
+  const trainingModeButton = requireElement<HTMLButtonElement>(
+    "#training-mode-button",
+  );
+  const readingModeButton = requireElement<HTMLButtonElement>(
+    "#reading-mode-button",
+  );
   const explanationElement =
     requireElement<HTMLTextAreaElement>("#explanation");
   const explanationCountElement =
@@ -34,9 +42,50 @@
   const newTrainingButton = requireElement<HTMLButtonElement>(
     "#new-training-button",
   );
+  const readingQuestionElement =
+    requireElement<HTMLTextAreaElement>("#reading-question");
+  const readingQuestionCountElement = requireElement<HTMLElement>(
+    "#reading-question-count",
+  );
+  const readingInputErrorElement = requireElement<HTMLElement>(
+    "#reading-input-error",
+  );
+  const readingSubmitButton = requireElement<HTMLButtonElement>(
+    "#reading-submit-button",
+  );
+  const readingResultElement = requireElement<HTMLElement>("#reading-result");
+  const focusPointsListElement =
+    requireElement<HTMLUListElement>("#focus-points-list");
+  const checksListElement = requireElement<HTMLUListElement>("#checks-list");
+  const readingQuestionsListElement = requireElement<HTMLUListElement>(
+    "#reading-questions-list",
+  );
+  const hintsListElement = requireElement<HTMLOListElement>("#hints-list");
+  const nextCandidatesBlockElement = requireElement<HTMLElement>(
+    "#next-candidates-block",
+  );
+  const nextCandidatesListElement = requireElement<HTMLUListElement>(
+    "#next-candidates-list",
+  );
+  const readingResultErrorElement = requireElement<HTMLElement>(
+    "#reading-result-error",
+  );
+  const detailButton = requireElement<HTMLButtonElement>("#detail-button");
+  const detailedExplanationBlockElement = requireElement<HTMLElement>(
+    "#detailed-explanation-block",
+  );
+  const detailedExplanationElement = requireElement<HTMLElement>(
+    "#detailed-explanation",
+  );
+  const completeReadingButton = requireElement<HTMLButtonElement>(
+    "#complete-reading-button",
+  );
 
   const inputValidation = globalThis.CodeReadingTrainerInputValidation;
   const evaluationContract = globalThis.CodeReadingTrainerEvaluationContract;
+  const readingSupportContract =
+    globalThis.CodeReadingTrainerReadingSupportContract;
+  const analytics = globalThis.CodeReadingTrainerAnalytics;
 
   const PAGE_STATUS = Object.freeze({
     ELIGIBLE: "eligible",
@@ -63,6 +112,25 @@
   let retryAfterUntil: number | null = null;
   let retryTimer: ReturnType<typeof setTimeout> | null = null;
   let newTrainingStarting = false;
+  let selectedMode: "training" | "reading_support" = "training";
+  let readingAttempt = 0;
+  let readingSubmitting = false;
+  let readingGuide: ReadingSupportResponse | null = null;
+  let readingStartedRecorded = false;
+  let readingApiInputError: string | null = null;
+  let readingRetryable = true;
+  let readingStatusMessage: string | null = null;
+
+  function recordReadingEvent(
+    name:
+      | "reading_support_started"
+      | "reading_support_guide_displayed"
+      | "reading_support_detail_displayed"
+      | "reading_support_completed",
+    stage?: ReadingSupportStage,
+  ): void {
+    void analytics.record(name, stage).catch(() => undefined);
+  }
 
   function clearRetryTimer(): void {
     if (retryTimer !== null) {
@@ -85,11 +153,21 @@
             evaluationState = { ...evaluationState, retryAfterUntil: null };
           }
           updateInputValidation();
+          updateReadingInputValidation();
+          if (
+            readingGuide &&
+            !detailedExplanationElement.textContent &&
+            readingRetryable
+          ) {
+            detailButton.disabled = false;
+            detailButton.textContent = "詳しい説明をもう一度取得する";
+          }
         }
       },
       Math.max(0, deadline - Date.now()),
     );
     updateInputValidation();
+    updateReadingInputValidation();
   }
 
   function isEvaluationLocked(): boolean {
@@ -126,7 +204,15 @@
 
   function resetSelection(): void {
     evaluationAttempt += 1;
+    readingAttempt += 1;
     evaluationState = { status: "editing" };
+    readingSubmitting = false;
+    readingGuide = null;
+    readingStartedRecorded = false;
+    readingApiInputError = null;
+    readingRetryable = true;
+    readingStatusMessage = null;
+    selectedMode = "training";
     selectedSourceUrl = null;
     selectedCodeElement.textContent = "";
     explanationElement.value = "";
@@ -134,18 +220,264 @@
     explanationElement.setAttribute("aria-invalid", "false");
     explanationCountElement.textContent = `0 / ${inputValidation.INPUT_LIMITS.explanation.toLocaleString("ja-JP")}文字`;
     inputErrorElement.textContent = "";
+    readingQuestionElement.value = "";
+    readingQuestionElement.readOnly = false;
+    readingQuestionElement.setAttribute("aria-invalid", "false");
+    readingQuestionCountElement.textContent = `0 / ${inputValidation.INPUT_LIMITS.question.toLocaleString("ja-JP")}文字`;
+    readingInputErrorElement.textContent = "";
+    readingSubmitButton.disabled = true;
+    readingSubmitButton.textContent = "読むためのガイドを受け取る";
+    trainingInputElement.hidden = false;
+    readingInputElement.hidden = true;
+    trainingModeButton.className = "mode-button is-selected";
+    trainingModeButton.setAttribute("aria-pressed", "true");
+    readingModeButton.className = "mode-button";
+    readingModeButton.setAttribute("aria-pressed", "false");
     evaluationButton.disabled = true;
     evaluationButton.textContent = "評価する";
     trainingMethodsElement.hidden = false;
     selectionSection.hidden = true;
     evaluationResultElement.hidden = true;
+    readingResultElement.hidden = true;
     totalScoreElement.textContent = "";
     criteriaListElement.replaceChildren();
     strengthsListElement.replaceChildren();
     gapsListElement.replaceChildren();
     userAnswerElement.textContent = "";
     modelAnswerElement.textContent = "";
+    focusPointsListElement.replaceChildren();
+    checksListElement.replaceChildren();
+    readingQuestionsListElement.replaceChildren();
+    hintsListElement.replaceChildren();
+    nextCandidatesListElement.replaceChildren();
+    readingResultErrorElement.textContent = "";
+    detailedExplanationBlockElement.hidden = true;
+    detailedExplanationElement.textContent = "";
+    detailButton.disabled = false;
+    detailButton.textContent = "詳しい説明を見る";
+    completeReadingButton.disabled = false;
     newTrainingButton.disabled = false;
+  }
+
+  function setMode(mode: "training" | "reading_support"): void {
+    if (readingSubmitting || isEvaluationLocked()) return;
+    selectedMode = mode;
+    const training = mode === "training";
+    trainingInputElement.hidden = !training;
+    readingInputElement.hidden = training;
+    evaluationResultElement.hidden = true;
+    readingResultElement.hidden = true;
+    trainingModeButton.className = training
+      ? "mode-button is-selected"
+      : "mode-button";
+    readingModeButton.className = training
+      ? "mode-button"
+      : "mode-button is-selected";
+    trainingModeButton.setAttribute("aria-pressed", String(training));
+    readingModeButton.setAttribute("aria-pressed", String(!training));
+    if (!training && !readingStartedRecorded) {
+      readingStartedRecorded = true;
+      recordReadingEvent("reading_support_started");
+    }
+    statusElement.textContent = training
+      ? evaluationState.status === "error"
+        ? evaluationState.message
+        : "選択したコードを読み、自分の言葉で説明してみましょう。"
+      : (readingStatusMessage ??
+        "分からない点や調査目的を書き、まず読むためのガイドを受け取りましょう。");
+    updateInputValidation();
+    updateReadingInputValidation();
+  }
+
+  function updateReadingInputValidation(): ReadingSupportInputValidation {
+    const validation = inputValidation.validateReadingSupportInput(
+      selectedCodeElement.textContent,
+      readingQuestionElement.value,
+    );
+    readingQuestionCountElement.textContent = `${validation.questionCharacterCount.toLocaleString("ja-JP")} / ${inputValidation.INPUT_LIMITS.question.toLocaleString("ja-JP")}文字`;
+    readingQuestionElement.setAttribute(
+      "aria-invalid",
+      validation.questionError ? "true" : "false",
+    );
+    readingInputErrorElement.textContent =
+      validation.codeError ??
+      validation.questionError ??
+      readingApiInputError ??
+      "";
+    const retryWaiting =
+      retryAfterUntil !== null && retryAfterUntil > Date.now();
+    readingSubmitButton.disabled =
+      !validation.valid ||
+      readingSubmitting ||
+      retryWaiting ||
+      !readingRetryable;
+    return validation;
+  }
+
+  function appendReadingItems(
+    list: HTMLUListElement | HTMLOListElement,
+    items: readonly string[],
+  ): void {
+    list.replaceChildren();
+    for (const item of items) {
+      const listItem = document.createElement("li");
+      listItem.textContent = item;
+      list.append(listItem);
+    }
+  }
+
+  function renderReadingGuide(response: ReadingSupportResponse): void {
+    appendReadingItems(focusPointsListElement, response.focusPoints);
+    appendReadingItems(checksListElement, response.checks);
+    appendReadingItems(readingQuestionsListElement, response.questions);
+    appendReadingItems(hintsListElement, response.hints);
+    nextCandidatesListElement.replaceChildren();
+    nextCandidatesBlockElement.hidden = response.nextCandidates.length === 0;
+    for (const candidate of response.nextCandidates) {
+      const item = document.createElement("li");
+      item.textContent = `${candidate.symbol}: ${candidate.reason}`;
+      nextCandidatesListElement.append(item);
+    }
+    readingResultErrorElement.textContent = "";
+    detailedExplanationBlockElement.hidden = true;
+    detailedExplanationElement.textContent = "";
+    detailButton.disabled = false;
+    detailButton.textContent = "詳しい説明を見る";
+    trainingMethodsElement.hidden = true;
+    selectionSection.hidden = true;
+    evaluationResultElement.hidden = true;
+    readingResultElement.hidden = false;
+  }
+
+  async function requestReadingSupport(
+    stage: ReadingSupportStage,
+  ): Promise<void> {
+    if (
+      readingSubmitting ||
+      !selectedSourceUrl ||
+      (retryAfterUntil !== null && retryAfterUntil > Date.now()) ||
+      !updateReadingInputValidation().valid
+    ) {
+      return;
+    }
+    const request: ReadingSupportRequest = {
+      code: selectedCodeElement.textContent ?? "",
+      language: "python",
+      question: readingQuestionElement.value,
+      sourceUrl: selectedSourceUrl,
+      stage,
+    };
+    const attempt = ++readingAttempt;
+    readingSubmitting = true;
+    readingQuestionElement.readOnly = true;
+    selectionButton.disabled = true;
+    readingApiInputError = null;
+    readingRetryable = true;
+    readingResultErrorElement.textContent = "";
+    if (stage === "guide") {
+      readingSubmitButton.textContent = "ガイドを作成中…";
+      statusElement.textContent = "読むためのガイドを作成しています…";
+    } else {
+      detailButton.disabled = true;
+      detailButton.textContent = "詳しい説明を作成中…";
+      statusElement.textContent = "選択コードの詳しい説明を作成しています…";
+    }
+    updateReadingInputValidation();
+
+    try {
+      const permissionOrigin =
+        CodeReadingTrainerEvaluationConfig.getEvaluationApiPermissionOrigin();
+      if (permissionOrigin) {
+        const granted = await chrome.permissions.request({
+          origins: [permissionOrigin],
+        });
+        if (attempt !== readingAttempt) return;
+        if (!granted) throw new Error("permission denied");
+      }
+      const result = (await chrome.runtime.sendMessage({
+        request,
+        type: "REQUEST_READING_SUPPORT",
+      })) as EvaluationWorkerResult | undefined;
+      if (!result) throw new Error("missing response");
+      if (
+        "error" in result &&
+        result.error.code === "RATE_LIMITED" &&
+        typeof result.error.retryAfterSeconds === "number"
+      ) {
+        scheduleRetryAfterCooldown(
+          Date.now() + result.error.retryAfterSeconds * 1_000,
+        );
+      }
+      if (attempt !== readingAttempt) return;
+      if ("error" in result) {
+        readingResultErrorElement.textContent = result.error.message;
+        readingStatusMessage = `${result.error.message} 入力は保持されています。`;
+        statusElement.textContent = readingStatusMessage;
+        if (stage === "guide") {
+          readingApiInputError =
+            result.error.details
+              ?.map((detail) => `${detail.field}: ${detail.reason}`)
+              .join("\n") ?? "";
+          readingRetryable = result.error.retryable;
+        } else if (!result.error.retryable) {
+          readingRetryable = false;
+          detailButton.disabled = true;
+          detailButton.textContent = "詳しい説明を取得できません";
+        } else if (result.error.code === "RATE_LIMITED") {
+          detailButton.textContent = "再試行できるまで待機中…";
+        }
+        return;
+      }
+      const response = readingSupportContract.parseResponse(result.response);
+      if (!response || response.stage !== stage) {
+        throw new Error("invalid response");
+      }
+      if (stage === "guide") {
+        readingApiInputError = null;
+        readingStatusMessage = null;
+        readingGuide = response;
+        renderReadingGuide(response);
+        recordReadingEvent("reading_support_guide_displayed", "guide");
+        statusElement.textContent =
+          "まず着眼点とヒントを使って、自分でコードを読み進めてみましょう。";
+      } else {
+        detailedExplanationElement.textContent = response.detailedExplanation;
+        detailedExplanationBlockElement.hidden = false;
+        detailButton.disabled = true;
+        detailButton.textContent = "詳しい説明を表示済み";
+        recordReadingEvent(
+          "reading_support_detail_displayed",
+          "detailed_explanation",
+        );
+        statusElement.textContent = "詳しい説明を表示しました。";
+      }
+    } catch {
+      const message =
+        stage === "guide"
+          ? "読解サポートを開始できませんでした。入力は保持されています。もう一度お試しください。"
+          : "詳しい説明を取得できませんでした。もう一度お試しください。";
+      readingResultErrorElement.textContent = message;
+      readingStatusMessage = message;
+      statusElement.textContent = message;
+    } finally {
+      if (attempt === readingAttempt) {
+        readingSubmitting = false;
+        readingQuestionElement.readOnly = false;
+        readingSubmitButton.textContent = "読むためのガイドを受け取る";
+        selectionButton.disabled =
+          activePageKey === null || readingGuide !== null;
+        if (
+          stage === "detailed_explanation" &&
+          !detailedExplanationElement.textContent &&
+          readingRetryable &&
+          !(retryAfterUntil !== null && retryAfterUntil > Date.now())
+        ) {
+          detailButton.disabled = false;
+          detailButton.textContent = "詳しい説明をもう一度取得する";
+        }
+        updateReadingInputValidation();
+      }
+    }
   }
 
   function appendFeedbackItems(
@@ -299,7 +631,11 @@
     const nextPageKey = isEligible
       ? JSON.stringify([context.repository, context.ref, context.path])
       : null;
-    selectionButton.disabled = !isEligible || isEvaluationLocked();
+    selectionButton.disabled =
+      !isEligible ||
+      isEvaluationLocked() ||
+      readingSubmitting ||
+      readingGuide !== null;
 
     if (isEligible) {
       if (
@@ -310,9 +646,17 @@
         resetSelection();
       }
       activePageKey = nextPageKey;
-      selectionButton.disabled = isEvaluationLocked();
-      if (evaluationState.status === "editing") {
-        statusElement.textContent = `${context.repository} の ${context.path}（${context.ref}）でトレーニングできます。`;
+      selectionButton.disabled =
+        isEvaluationLocked() || readingSubmitting || readingGuide !== null;
+      if (
+        evaluationState.status === "editing" &&
+        !readingSubmitting &&
+        readingGuide === null
+      ) {
+        statusElement.textContent =
+          selectedMode === "reading_support" && readingStatusMessage
+            ? readingStatusMessage
+            : `${context.repository} の ${context.path}（${context.ref}）でトレーニングできます。`;
       }
       return;
     }
@@ -367,8 +711,38 @@
     }
   });
 
+  trainingModeButton.addEventListener("click", () => setMode("training"));
+  readingModeButton.addEventListener("click", () => setMode("reading_support"));
+
+  readingQuestionElement.addEventListener("input", () => {
+    readingApiInputError = null;
+    readingRetryable = true;
+    readingStatusMessage = null;
+    readingInputErrorElement.textContent = "";
+    readingResultErrorElement.textContent = "";
+    updateReadingInputValidation();
+  });
+
+  readingSubmitButton.addEventListener("click", () => {
+    if (selectedMode === "reading_support") {
+      void requestReadingSupport("guide");
+    }
+  });
+
+  detailButton.addEventListener("click", () => {
+    if (readingGuide) void requestReadingSupport("detailed_explanation");
+  });
+
+  completeReadingButton.addEventListener("click", async () => {
+    if (!readingGuide || readingSubmitting) return;
+    recordReadingEvent("reading_support_completed");
+    resetSelection();
+    statusElement.textContent = "現在のGitHubページを確認しています…";
+    await updateStatus(true);
+  });
+
   selectionButton.addEventListener("click", async () => {
-    if (isEvaluationLocked()) return;
+    if (isEvaluationLocked() || readingSubmitting) return;
 
     const attempt = ++pageContextAttempt;
     try {
@@ -406,6 +780,7 @@
       statusElement.textContent =
         "選択したコードを読み、自分の言葉で説明してみましょう。";
       updateInputValidation();
+      updateReadingInputValidation();
     } catch (error) {
       if (attempt !== pageContextAttempt) return;
       statusElement.textContent = getErrorMessage(error);
@@ -433,6 +808,7 @@
     event.preventDefault();
 
     if (
+      selectedMode !== "training" ||
       isEvaluationLocked() ||
       (retryAfterUntil !== null && retryAfterUntil > Date.now()) ||
       !selectedSourceUrl ||

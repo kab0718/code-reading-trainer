@@ -69,13 +69,29 @@ interface TrainingInputValidation {
   valid: boolean;
 }
 
+interface ReadingSupportInputValidation {
+  codeCharacterCount: number;
+  codeError: string | null;
+  questionCharacterCount: number;
+  questionError: string | null;
+  valid: boolean;
+}
+
 interface InputValidationApi {
-  INPUT_LIMITS: Readonly<{ code: number; explanation: number }>;
+  INPUT_LIMITS: Readonly<{
+    code: number;
+    explanation: number;
+    question: number;
+  }>;
   countCharacters(value: string): number;
   validateTrainingInput(
     code: string,
     explanation: string,
   ): TrainingInputValidation;
+  validateReadingSupportInput(
+    code: string,
+    question: string,
+  ): ReadingSupportInputValidation;
 }
 
 interface EvaluationRequest {
@@ -85,9 +101,49 @@ interface EvaluationRequest {
   sourceUrl: string;
 }
 
+type ReadingSupportStage = "guide" | "detailed_explanation";
+
+interface ReadingSupportRequest {
+  code: string;
+  language: "python";
+  question: string;
+  sourceUrl: string;
+  stage: ReadingSupportStage;
+}
+
+interface ReadingSupportResponse {
+  checks: string[];
+  contractVersion: "1.0";
+  detailedExplanation: string | null;
+  focusPoints: string[];
+  generatedAt: string;
+  hints: string[];
+  nextCandidates: Array<{ reason: string; symbol: string }>;
+  questions: string[];
+  requestId: string;
+  stage: ReadingSupportStage;
+}
+
 interface EvaluationConfigApi {
   getEvaluationApiPermissionOrigin(): string | null;
   getEvaluationApiUrl(): string | null;
+  getReadingSupportApiUrl(): string | null;
+}
+
+interface ReadingSupportContractApi {
+  parseError(value: unknown): EvaluationWorkerError | null;
+  parseResponse(value: unknown): ReadingSupportResponse | null;
+}
+
+interface AnalyticsApi {
+  record(
+    name:
+      | "reading_support_started"
+      | "reading_support_guide_displayed"
+      | "reading_support_detail_displayed"
+      | "reading_support_completed",
+    stage?: ReadingSupportStage,
+  ): Promise<void>;
 }
 
 interface EvaluationResponse {
@@ -111,7 +167,7 @@ interface EvaluationResponse {
 }
 
 type EvaluationWorkerResult =
-  | { ok: true; response: EvaluationResponse }
+  | { ok: true; response: EvaluationResponse | ReadingSupportResponse }
   | {
       error: {
         code: string;
@@ -149,4 +205,6 @@ type EvaluationUiState =
 declare var CodeReadingTrainerInputValidation: InputValidationApi;
 declare var CodeReadingTrainerEvaluationConfig: EvaluationConfigApi;
 declare var CodeReadingTrainerEvaluationContract: EvaluationContractApi;
+declare var CodeReadingTrainerReadingSupportContract: ReadingSupportContractApi;
+declare var CodeReadingTrainerAnalytics: AnalyticsApi;
 declare var CodeReadingTrainerPageContext: PageContextApi;

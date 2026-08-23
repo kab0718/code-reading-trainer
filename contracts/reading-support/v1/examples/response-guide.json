@@ -1,0 +1,16 @@
+{
+  "requestId": "57d8d07a-2596-4f11-851d-ace9b27b25d1",
+  "contractVersion": "1.0",
+  "stage": "guide",
+  "focusPoints": [
+    "normalize 内で value に対して呼ばれるメソッドの順序に注目します。"
+  ],
+  "checks": ["value が strip と lower を提供する前提を確認します。"],
+  "questions": [
+    "strip の結果に対して lower を呼ぶと、返り値はどう変わりますか？"
+  ],
+  "hints": ["return の右辺を内側の value から順番に追ってみましょう。"],
+  "nextCandidates": [],
+  "detailedExplanation": null,
+  "generatedAt": "2026-08-24T00:00:00Z"
+}

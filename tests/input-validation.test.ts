@@ -52,3 +52,27 @@ test("文字数はUnicodeコードポイント単位で数える", () => {
 
   assert.equal(countCharacters("A😀あ"), 3);
 });
+
+test("読解サポートの質問必須と2,000文字上限を検証する", () => {
+  const { INPUT_LIMITS, validateReadingSupportInput } = loadValidation();
+  assert.equal(INPUT_LIMITS.question, 2_000);
+  assert.equal(validateReadingSupportInput("return value", " ").valid, false);
+  assert.match(
+    validateReadingSupportInput("return value", " ").questionError,
+    /分からない点または調査目的/u,
+  );
+  assert.equal(
+    validateReadingSupportInput(
+      "return value",
+      "あ".repeat(INPUT_LIMITS.question),
+    ).valid,
+    true,
+  );
+  assert.match(
+    validateReadingSupportInput(
+      "return value",
+      "あ".repeat(INPUT_LIMITS.question + 1),
+    ).questionError,
+    /内容を短く/u,
+  );
+});
