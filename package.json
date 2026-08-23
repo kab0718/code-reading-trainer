@@ -14,7 +14,8 @@
     "test": "npm run build:extension && node --test tests/*.test.ts",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.tests.json --noEmit",
     "validate:extension": "npm run build:extension && node scripts/validate-extension.ts",
-    "validate:api": "wrangler deploy --dry-run --outdir dist/api"
+    "validate:api": "wrangler deploy --dry-run --outdir dist/api",
+    "verify:ai-evaluation": "node scripts/verify-ai-evaluation.ts"
   },
   "engines": {
     "node": ">=24"

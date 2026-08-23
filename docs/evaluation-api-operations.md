@@ -8,7 +8,7 @@
 
 - Workerエントリーポイント: [`api/worker.ts`](../api/worker.ts)
 - AIサービス: Cloudflare Workers AI bindingのJSON Schema出力
-- モデル名: `AI_MODEL`（初期値は `@cf/openai/gpt-oss-20b`）
+- モデル名: `AI_MODEL`（初期値はJSON Mode対応の `@cf/meta/llama-3.3-70b-instruct-fp8-fast`）
 - 利用制限: Cloudflare Workers Rate Limiting bindingで、許可した拡張機能Originと接続元IPの組み合わせごとに10回/60秒
 - 利用元制限: `ALLOWED_EXTENSION_IDS` に列挙したChrome拡張機能IDだけを許可
 - AI無料枠: Workers AIの10,000 Neurons/日を上限とし、超過時はUTC 00:00のリセットまで再試行可能な429を返す
@@ -23,7 +23,7 @@
 3. v1契約の必須フィールド、未知フィールド、型、文字数、言語、URL形式を検証する。
 4. 利用回数制限を確認する。
 5. `sourceUrl` へHEADリクエストし、公開されているGitHubのPythonファイルか確認する。
-6. コードと説明だけをWorkers AI bindingへ送り、20秒で中断する。`sourceUrl` は送らない。
+6. コードと説明だけをWorkers AI bindingへ送り、23秒で中断する。`sourceUrl` は送らない。
 7. モデル出力を検証し、対象軸の満点を最大剰余方式で100点へ再配分してv1レスポンスを作る。
 
 エラー本文や通常ログへコード、説明、source URL、モデルの生レスポンスを出力しない。
@@ -41,7 +41,7 @@
 
 ### 2. ローカル確認
 
-開発用の変数ファイルを作成し、実際に読み込んだChrome拡張機能のIDを`ALLOWED_EXTENSION_IDS`へ設定してからWorkerを起動する。複数のIDを許可するときはカンマ区切りで指定する。Workers AI bindingの推論はローカル実行時もCloudflareの利用量へ計上される。
+開発用の変数ファイルを作成し、実際に読み込んだChrome拡張機能のIDを`ALLOWED_EXTENSION_IDS`へ設定してからWorkerを起動する。複数のIDを許可するときはカンマ区切りで指定する。`ai.remote: true` によりWorker本体はローカルで実行し、Workers AI bindingだけをCloudflareへ接続する。推論はローカル実行時もCloudflareの利用量へ計上される。
 
 ```sh
 cp .dev.vars.example .dev.vars
@@ -55,6 +55,27 @@ npx wrangler dev
 ```sh
 npm run check
 ```
+
+### 2.1 実モデルの採点品質確認
+
+デプロイ後は、許可済みの拡張機能Originとpublic repositoryのPythonファイルURLを指定し、代表3ケースの評価を確認する。
+
+```sh
+EVALUATION_API_URL="https://<worker-host>/v1/evaluations" \
+EVALUATION_TEST_ORIGIN="chrome-extension://<extension-id>" \
+EVALUATION_TEST_SOURCE_URL="https://github.com/<owner>/<repository>/blob/<ref>/<file>.py" \
+npm run verify:ai-evaluation
+```
+
+この検証は10回の評価リクエスト（不正出力の再生成が毎回発生した場合は最大20回の推論）を行うため通常のCIには含めない。Rate Limitingの10回/60秒に収めるため、同じOrigin・接続元IPから直前60秒間に評価していない状態で実行する。各ケースで同程度の言い換え回答と同一回答の再採点を行い、次を満たさない場合は失敗する。
+
+- レスポンスの点数整合性と観点別満点合計が契約どおりである
+- コードだけから選ぶ適用軸がケースごとの期待値と一致し、回答間でも変わらない
+- 総合点の最大差が15点以内である
+- フィードバックにコードと回答で共通する具体的な識別子・処理が含まれる
+- 重要処理を欠く回答が完全回答より15点以上低く、不足点が返される
+
+2026-08-24に `@cf/meta/llama-3.3-70b-instruct-fp8-fast` をremote bindingで10リクエスト検証し、すべて合格した。完全回答の総合点範囲は文字列の正規化が94〜100点、分岐と例外が97点、外部への保存が82〜86点で、重要処理を欠く回答の減点と不足点も確認した。
 
 ## デプロイ
 

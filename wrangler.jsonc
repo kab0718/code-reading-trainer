@@ -6,9 +6,10 @@
   "workers_dev": true,
   "ai": {
     "binding": "AI",
+    "remote": true,
   },
   "vars": {
-    "AI_MODEL": "@cf/openai/gpt-oss-20b",
+    "AI_MODEL": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
     "ALLOWED_EXTENSION_IDS": "",
     "ALLOW_MISSING_ORIGIN": "false",
   },

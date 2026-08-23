@@ -83,6 +83,36 @@ test("対象軸が1つもないモデル出力を拒否する", () => {
   );
 });
 
+test("採点の揺れを抑える5点刻み以外の割合点を拒否する", () => {
+  const output = createModelEvaluation();
+  output.criteria[0].percentageScore = 83;
+
+  assert.equal(validateModelEvaluation(output), false);
+});
+
+test("軸の固定順、未知フィールド、対象外軸のnull規則を検証する", () => {
+  const wrongOrder = structuredClone(createModelEvaluation());
+  [wrongOrder.criteria[0], wrongOrder.criteria[1]] = [
+    wrongOrder.criteria[1],
+    wrongOrder.criteria[0],
+  ];
+
+  const unknownField = {
+    ...createModelEvaluation(),
+    totalScore: 80,
+  };
+
+  const inconsistentExcludedCriterion = structuredClone(
+    createModelEvaluation(),
+  );
+  inconsistentExcludedCriterion.criteria[3].feedback =
+    "対象外なのにfeedbackがあります。";
+
+  assert.equal(validateModelEvaluation(wrongOrder), false);
+  assert.equal(validateModelEvaluation(unknownField), false);
+  assert.equal(validateModelEvaluation(inconsistentExcludedCriterion), false);
+});
+
 test("モデルの割合点を契約どおりの観点別得点へ正規化する", () => {
   const response = buildEvaluationResponse(
     createModelEvaluation(),

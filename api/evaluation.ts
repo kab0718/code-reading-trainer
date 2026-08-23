@@ -132,7 +132,8 @@ export function validateModelEvaluation(
       typeof criterion.percentageScore !== "number" ||
       !Number.isInteger(criterion.percentageScore) ||
       criterion.percentageScore < 0 ||
-      criterion.percentageScore > 100
+      criterion.percentageScore > 100 ||
+      criterion.percentageScore % 5 !== 0
     ) {
       return false;
     }
