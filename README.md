@@ -1,6 +1,6 @@
 # Code Reading Trainer
 
-GitHub上のPythonコードを読み、その処理内容を自分の言葉で説明することで、コードリーディング力を鍛えるChrome拡張です。
+GitHub上のPythonコードを自分の力で読み解くためのChrome拡張です。理解を説明して採点を受けるトレーニングと、実際のOSS読解で着眼点や段階的なヒントを得る読解サポートを提供します。
 
 現在は企画・初期設計段階です。プロダクトの狙い、MVP、学習体験、評価方針は [`docs/product-overview.md`](docs/product-overview.md)、Python関数・メソッド候補の抽出方式は [`docs/python-candidate-extraction.md`](docs/python-candidate-extraction.md)、評価の配点とAPI契約は [`docs/evaluation-api-contract.md`](docs/evaluation-api-contract.md)、評価APIの構成と運用は [`docs/evaluation-api-operations.md`](docs/evaluation-api-operations.md)、今後の作業手順と完了条件は [`docs/implementation-plan.md`](docs/implementation-plan.md) にまとめています。
 
@@ -8,11 +8,13 @@ GitHub上のPythonコードを読み、その処理内容を自分の言葉で�
 
 1. GitHubでソースコードのファイルを開く
 2. システムが提示する関数・メソッド候補から1つ選ぶ、または任意のコードを選択する
-3. そのコードが何をしているかを自分の言葉で説明する
-4. 目的、主要処理、分岐・例外、副作用などの観点別の得点とフィードバックを受ける
-5. 模範解答と自分の説明を比較して完了する
+3. 目的に応じてトレーニングまたは読解サポートを選ぶ
+4. トレーニングでは、そのコードが何をしているかを自分の言葉で説明する
+5. 目的、主要処理、分岐・例外、副作用などの観点別の得点とフィードバックを受ける
+6. 読解サポートでは、分からない点や調査目的を入力し、着眼点や段階的なヒントを受ける
+7. 必要な場合だけ詳しい説明を確認する
 
-初期版の回答は1回限りとし、回答の書き直しと再評価は将来の機能として検討します。
+トレーニングの回答は1回限りとし、回答の書き直しと再評価は将来の機能として検討します。初期の読解サポートは選択コードを対象とし、リポジトリ全体の自動解析は行いません。
 
 ## ディレクトリ構成
 
