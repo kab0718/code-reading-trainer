@@ -144,7 +144,7 @@ type EvaluationUiState =
       retryable: boolean;
       status: "error";
     }
-  | { response: EvaluationResponse; status: "completed" };
+  | { answer: string; response: EvaluationResponse; status: "completed" };
 
 declare var CodeReadingTrainerInputValidation: InputValidationApi;
 declare var CodeReadingTrainerEvaluationConfig: EvaluationConfigApi;

@@ -14,7 +14,7 @@
         GitHubのソースコード画面を確認しています…
       </p>
 
-      <section>
+      <section id="training-methods">
         <h2>トレーニング方法</h2>
         <button type="button" disabled>おすすめから選ぶ</button>
         <button type="button" id="selection-button">
@@ -36,6 +36,9 @@
         ></textarea>
         <p id="explanation-count" class="character-count"></p>
         <p id="input-error" class="input-error" role="alert"></p>
+        <p class="one-attempt-note">
+          回答は1回限りです。採点後に回答を書き直したり、再評価したりすることはできません。
+        </p>
         <button type="submit" id="evaluation-button" disabled>評価する</button>
       </form>
 
@@ -72,6 +75,20 @@
             <h3>不足していた点</h3>
             <ul id="gaps-list" class="feedback-list"></ul>
           </section>
+        </div>
+
+        <div class="result-block answer-review">
+          <h3>回答を比べる</h3>
+          <div class="answer-comparison">
+            <section class="answer-panel answer-panel--user">
+              <h4>あなたの回答</h4>
+              <p id="user-answer" class="answer-text"></p>
+            </section>
+            <section class="answer-panel answer-panel--model">
+              <h4>模範解答</h4>
+              <p id="model-answer" class="answer-text"></p>
+            </section>
+          </div>
         </div>
       </section>
     </main>

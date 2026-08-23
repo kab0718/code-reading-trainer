@@ -8,6 +8,8 @@
   }
 
   const statusElement = requireElement<HTMLElement>("#status");
+  const trainingMethodsElement =
+    requireElement<HTMLElement>("#training-methods");
   const selectionButton =
     requireElement<HTMLButtonElement>("#selection-button");
   const selectionSection = requireElement<HTMLFormElement>("#selection");
@@ -27,6 +29,8 @@
   const strengthsListElement =
     requireElement<HTMLUListElement>("#strengths-list");
   const gapsListElement = requireElement<HTMLUListElement>("#gaps-list");
+  const userAnswerElement = requireElement<HTMLElement>("#user-answer");
+  const modelAnswerElement = requireElement<HTMLElement>("#model-answer");
 
   const inputValidation = globalThis.CodeReadingTrainerInputValidation;
   const evaluationContract = globalThis.CodeReadingTrainerEvaluationContract;
@@ -128,12 +132,15 @@
     inputErrorElement.textContent = "";
     evaluationButton.disabled = true;
     evaluationButton.textContent = "評価する";
+    trainingMethodsElement.hidden = false;
     selectionSection.hidden = true;
     evaluationResultElement.hidden = true;
     totalScoreElement.textContent = "";
     criteriaListElement.replaceChildren();
     strengthsListElement.replaceChildren();
     gapsListElement.replaceChildren();
+    userAnswerElement.textContent = "";
+    modelAnswerElement.textContent = "";
   }
 
   function appendFeedbackItems(
@@ -158,7 +165,10 @@
     }
   }
 
-  function renderEvaluationResult(response: EvaluationResponse): void {
+  function renderEvaluationResult(
+    response: EvaluationResponse,
+    answer: string,
+  ): void {
     totalScoreElement.textContent = response.totalScore.toLocaleString("ja-JP");
     criteriaListElement.replaceChildren();
 
@@ -198,6 +208,10 @@
       response.gaps,
       "不足点は挙げられていません。",
     );
+    userAnswerElement.textContent = answer;
+    modelAnswerElement.textContent = response.modelAnswer;
+    trainingMethodsElement.hidden = true;
+    selectionSection.hidden = true;
     evaluationResultElement.hidden = false;
   }
 
@@ -252,7 +266,7 @@
       selectionButton.disabled = true;
       evaluationButton.textContent = "評価済み";
       statusElement.textContent = `採点が完了しました（${nextState.response.totalScore} / 100点）。`;
-      renderEvaluationResult(nextState.response);
+      renderEvaluationResult(nextState.response, nextState.answer);
     } else {
       if (
         nextState.retryAfterUntil !== null &&
@@ -460,6 +474,7 @@
           return;
         }
         applyEvaluationState({
+          answer: request.explanation,
           response,
           status: "completed",
         });
