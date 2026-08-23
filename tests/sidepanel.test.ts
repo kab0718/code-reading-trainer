@@ -20,6 +20,10 @@ const evaluationContractSource = await readFile(
   path.join(process.cwd(), "dist/extension/src/evaluation-contract.js"),
   "utf8",
 );
+const sidepanelHtmlSource = await readFile(
+  path.join(process.cwd(), "src/sidepanel.html"),
+  "utf8",
+);
 
 function eligibleContext(filePath) {
   return {
@@ -121,6 +125,9 @@ function createSidepanelEnvironment({
   });
   const elements: Record<string, MockElement> = {
     "#status": createElement("#status", { textContent: "" }),
+    "#training-methods": createElement("#training-methods", {
+      hidden: false,
+    }),
     "#selection-button": createElement("#selection-button", {
       disabled: false,
     }),
@@ -143,6 +150,8 @@ function createSidepanelEnvironment({
     "#criteria-list": createElement("#criteria-list", { children: [] }),
     "#strengths-list": createElement("#strengths-list", { children: [] }),
     "#gaps-list": createElement("#gaps-list", { children: [] }),
+    "#user-answer": createElement("#user-answer", { textContent: "" }),
+    "#model-answer": createElement("#model-answer", { textContent: "" }),
   };
 
   const context = vm.createContext({
@@ -265,6 +274,11 @@ function elementText(element) {
     .join("")}`;
 }
 
+test("回答フォームで1回限りのルールを明示する", () => {
+  assert.match(sidepanelHtmlSource, /回答は1回限りです/u);
+  assert.match(sidepanelHtmlSource, /再評価したりすることはできません/u);
+});
+
 test("Pythonファイル間の遷移で前の選択コードと回答を消す", async () => {
   const environment = createSidepanelEnvironment();
   await flushPromises();
@@ -384,6 +398,30 @@ test("採点結果を表示し、対象外の評価軸を除外する", async ()
   );
 });
 
+test("模範解答は採点成功後だけ自分の回答と並べて表示する", async () => {
+  const environment = createSidepanelEnvironment();
+  await flushPromises();
+  const userAnswer = "valueを返します。";
+  const modelAnswer = `${"長い模範解答です。".repeat(300)}\nvalueを返します。`;
+
+  assert.equal(environment.elements["#evaluation-result"].hidden, true);
+  assert.equal(environment.elements["#model-answer"].textContent, "");
+
+  await environment.select("return value");
+  environment.inputExplanation(userAnswer);
+  const response = evaluationResponse();
+  response.modelAnswer = modelAnswer;
+  environment.setEvaluationHandler(async () => ({ ok: true, response }));
+
+  await environment.submit().completion;
+
+  assert.equal(environment.elements["#selection"].hidden, true);
+  assert.equal(environment.elements["#training-methods"].hidden, true);
+  assert.equal(environment.elements["#evaluation-result"].hidden, false);
+  assert.equal(environment.elements["#user-answer"].textContent, userAnswer);
+  assert.equal(environment.elements["#model-answer"].textContent, modelAnswer);
+});
+
 test("不正な採点結果を表示せず回答を保持して再試行できる", async () => {
   const environment = createSidepanelEnvironment();
   await flushPromises();
@@ -464,6 +502,7 @@ test("APIエラー時は回答を保持し、手動で再送信できる", async
   assert.equal(environment.elements["#explanation"].value, answer);
   assert.equal(environment.elements["#explanation"].readOnly, false);
   assert.equal(environment.elements["#selection-button"].disabled, false);
+  assert.equal(environment.elements["#training-methods"].hidden, false);
   assert.equal(environment.elements["#explanation"]["aria-invalid"], "true");
   assert.match(
     environment.elements["#input-error"].textContent,
@@ -579,6 +618,7 @@ test("採点成功後は回答を固定して同じ回答を再送信できな�
   await secondSubmission.completion;
 
   assert.equal(environment.evaluationMessages.length, 1);
+  assert.equal(environment.elements["#selection"].hidden, true);
   assert.equal(environment.elements["#explanation"].readOnly, true);
   assert.equal(environment.elements["#evaluation-button"].disabled, true);
   assert.equal(
@@ -669,6 +709,8 @@ test("採点完了後に別ファイルへ移動すると新しい選択を開�
 
   assert.equal(environment.elements["#selection-button"].disabled, false);
   assert.equal(environment.elements["#selection"].hidden, true);
+  assert.equal(environment.elements["#evaluation-result"].hidden, true);
+  assert.equal(environment.elements["#model-answer"].textContent, "");
   assert.match(environment.elements["#status"].textContent, /second\.py/u);
 });
 

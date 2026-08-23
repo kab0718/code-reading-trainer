@@ -280,6 +280,51 @@ textarea[aria-invalid="true"] {
   color: #8c2929;
 }
 
+.one-attempt-note {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border-left: 3px solid #b27032;
+  color: #58605a;
+  background: #f1ede5;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.answer-review {
+  margin-top: 28px;
+}
+
+.answer-comparison {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.answer-panel {
+  min-width: 0;
+  padding: 14px 0 0;
+  border-top: 3px solid #758079;
+}
+
+.answer-panel--model {
+  border-top: 3px solid #315a40;
+}
+
+.answer-panel h4 {
+  margin: 0;
+  font-size: 13px;
+}
+
+.answer-text {
+  margin: 10px 0 0;
+  color: #424a44;
+  font-size: 13px;
+  line-height: 1.75;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
 textarea {
   padding: 12px;
   border: 1px solid #bdc5be;
@@ -287,4 +332,21 @@ textarea {
   resize: vertical;
   background: #fff;
   line-height: 1.5;
+}
+
+@media (min-width: 640px) {
+  .answer-comparison {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0;
+  }
+
+  .answer-panel {
+    padding: 14px 18px 0 0;
+  }
+
+  .answer-panel--model {
+    padding-right: 0;
+    padding-left: 18px;
+    border-left: 1px solid #d8ddd8;
+  }
 }
