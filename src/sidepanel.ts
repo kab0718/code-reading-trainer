@@ -31,6 +31,9 @@
   const gapsListElement = requireElement<HTMLUListElement>("#gaps-list");
   const userAnswerElement = requireElement<HTMLElement>("#user-answer");
   const modelAnswerElement = requireElement<HTMLElement>("#model-answer");
+  const newTrainingButton = requireElement<HTMLButtonElement>(
+    "#new-training-button",
+  );
 
   const inputValidation = globalThis.CodeReadingTrainerInputValidation;
   const evaluationContract = globalThis.CodeReadingTrainerEvaluationContract;
@@ -59,6 +62,7 @@
   let pageContextAttempt = 0;
   let retryAfterUntil: number | null = null;
   let retryTimer: ReturnType<typeof setTimeout> | null = null;
+  let newTrainingStarting = false;
 
   function clearRetryTimer(): void {
     if (retryTimer !== null) {
@@ -141,6 +145,7 @@
     gapsListElement.replaceChildren();
     userAnswerElement.textContent = "";
     modelAnswerElement.textContent = "";
+    newTrainingButton.disabled = false;
   }
 
   function appendFeedbackItems(
@@ -265,6 +270,7 @@
       explanationElement.readOnly = true;
       selectionButton.disabled = true;
       evaluationButton.textContent = "評価済み";
+      newTrainingButton.disabled = false;
       statusElement.textContent = `採点が完了しました（${nextState.response.totalScore} / 100点）。`;
       renderEvaluationResult(nextState.response, nextState.answer);
     } else {
@@ -285,7 +291,10 @@
     updateInputValidation();
   }
 
-  function applyPageContext(context: PageContext): void {
+  function applyPageContext(
+    context: PageContext,
+    selectionAlreadyReset = false,
+  ): void {
     const isEligible = context.status === PAGE_STATUS.ELIGIBLE;
     const nextPageKey = isEligible
       ? JSON.stringify([context.repository, context.ref, context.path])
@@ -293,7 +302,11 @@
     selectionButton.disabled = !isEligible || isEvaluationLocked();
 
     if (isEligible) {
-      if (activePageKey && activePageKey !== nextPageKey) {
+      if (
+        !selectionAlreadyReset &&
+        activePageKey &&
+        activePageKey !== nextPageKey
+      ) {
         resetSelection();
       }
       activePageKey = nextPageKey;
@@ -304,7 +317,9 @@
       return;
     }
 
-    resetSelection();
+    if (!selectionAlreadyReset) {
+      resetSelection();
+    }
     activePageKey = null;
     statusElement.textContent =
       unsupportedMessages[context.reason] ??
@@ -319,19 +334,38 @@
     return "ページ情報を取得できませんでした。GitHubページを再読み込みしてください。";
   }
 
-  async function updateStatus(): Promise<void> {
+  async function updateStatus(selectionAlreadyReset = false): Promise<void> {
     const attempt = ++pageContextAttempt;
     try {
       const context = await getPageContext();
       if (attempt !== pageContextAttempt) return;
-      applyPageContext(context);
+      applyPageContext(context, selectionAlreadyReset);
     } catch (error) {
       if (attempt !== pageContextAttempt) return;
       selectionButton.disabled = true;
-      resetSelection();
+      if (!selectionAlreadyReset) {
+        resetSelection();
+      }
       statusElement.textContent = getErrorMessage(error);
     }
   }
+
+  newTrainingButton.addEventListener("click", async () => {
+    if (evaluationState.status !== "completed" || newTrainingStarting) return;
+
+    newTrainingStarting = true;
+    resetSelection();
+    newTrainingButton.disabled = true;
+    selectionButton.disabled = true;
+    statusElement.textContent = "現在のGitHubページを確認しています…";
+
+    try {
+      await updateStatus(true);
+    } finally {
+      newTrainingStarting = false;
+      newTrainingButton.disabled = false;
+    }
+  });
 
   selectionButton.addEventListener("click", async () => {
     if (isEvaluationLocked()) return;
@@ -522,7 +556,7 @@
     }
   });
 
-  chrome.tabs.onActivated.addListener(updateStatus);
+  chrome.tabs.onActivated.addListener(() => updateStatus());
   chrome.tabs.onUpdated.addListener((_tabId, changeInfo, tab) => {
     if (tab.active && (changeInfo.status === "complete" || changeInfo.url)) {
       updateStatus();
