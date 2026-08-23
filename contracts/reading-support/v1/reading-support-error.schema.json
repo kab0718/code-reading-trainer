@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://code-reading-trainer.example/contracts/reading-support/v1/reading-support-error.schema.json",
+  "title": "ReadingSupportErrorV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["requestId", "contractVersion", "error"],
+  "properties": {
+    "requestId": { "type": "string", "format": "uuid" },
+    "contractVersion": { "const": "1.0" },
+    "error": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message", "details", "retryable"],
+      "properties": {
+        "code": {
+          "enum": [
+            "INVALID_JSON",
+            "VALIDATION_ERROR",
+            "UNAUTHORIZED",
+            "PAYLOAD_TOO_LARGE",
+            "RATE_LIMITED",
+            "INTERNAL_ERROR",
+            "READING_SUPPORT_MODEL_ERROR",
+            "READING_SUPPORT_TIMEOUT"
+          ]
+        },
+        "message": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "details": {
+          "type": "array",
+          "maxItems": 20,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["field", "reason"],
+            "properties": {
+              "field": { "type": "string", "minLength": 1, "maxLength": 100 },
+              "reason": { "type": "string", "minLength": 1, "maxLength": 500 }
+            }
+          }
+        },
+        "retryable": { "type": "boolean" },
+        "retryAfterSeconds": { "type": "integer", "minimum": 1 }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "code": { "const": "RATE_LIMITED" } },
+            "required": ["code"]
+          },
+          "then": {
+            "properties": {
+              "retryAfterSeconds": { "type": "integer", "minimum": 1 }
+            },
+            "required": ["retryAfterSeconds"]
+          },
+          "else": { "not": { "required": ["retryAfterSeconds"] } }
+        },
+        {
+          "if": {
+            "properties": {
+              "code": {
+                "enum": [
+                  "INVALID_JSON",
+                  "VALIDATION_ERROR",
+                  "UNAUTHORIZED",
+                  "PAYLOAD_TOO_LARGE"
+                ]
+              }
+            },
+            "required": ["code"]
+          },
+          "then": { "properties": { "retryable": { "const": false } } },
+          "else": { "properties": { "retryable": { "const": true } } }
+        }
+      ]
+    }
+  }
+}

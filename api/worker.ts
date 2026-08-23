@@ -6,16 +6,33 @@ import {
   ModelTimeoutError,
 } from "./workers-ai.ts";
 import type { EvaluationInput, WorkersAiEnvironment } from "./workers-ai.ts";
+import {
+  buildReadingSupportResponse,
+  READING_SUPPORT_CONTRACT_VERSION,
+} from "./reading-support.ts";
+import type {
+  ReadingSupportInput,
+  ReadingSupportStage,
+} from "./reading-support.ts";
+import { supportReadingWithWorkersAI } from "./workers-reading-support.ts";
 
 const MAX_BODY_BYTES = 64 * 1024;
 const API_TIMEOUT_MS = 25_000;
 const SOURCE_CHECK_TIMEOUT_MS = 3_000;
 const EVALUATION_PATH = "/v1/evaluations";
-const REQUEST_FIELDS = [
+const READING_SUPPORT_PATH = "/v1/reading-support";
+const EVALUATION_REQUEST_FIELDS = [
   "language",
   "sourceUrl",
   "code",
   "explanation",
+] as const;
+const READING_SUPPORT_REQUEST_FIELDS = [
+  "language",
+  "sourceUrl",
+  "code",
+  "question",
+  "stage",
 ] as const;
 const GITHUB_PYTHON_URL =
   /^https:\/\/github\.com\/[^/]+\/[^/]+\/blob\/.+\.py(?:[?#].*)?$/;
@@ -33,7 +50,7 @@ const ERROR_DEFINITIONS = {
   },
   UNAUTHORIZED: {
     status: 401,
-    message: "評価APIを利用できません。",
+    message: "このAPIを利用できません。",
     retryable: false,
   },
   PAYLOAD_TOO_LARGE: {
@@ -49,7 +66,7 @@ const ERROR_DEFINITIONS = {
   },
   INTERNAL_ERROR: {
     status: 500,
-    message: "評価処理で問題が発生しました。時間を置いて再試行してください。",
+    message: "処理で問題が発生しました。時間を置いて再試行してください。",
     retryable: true,
   },
   MODEL_ERROR: {
@@ -60,6 +77,17 @@ const ERROR_DEFINITIONS = {
   EVALUATION_TIMEOUT: {
     status: 504,
     message: "評価処理がタイムアウトしました。再試行してください。",
+    retryable: true,
+  },
+  READING_SUPPORT_MODEL_ERROR: {
+    status: 502,
+    message: "読解サポートを作成できませんでした。再試行してください。",
+    retryable: true,
+  },
+  READING_SUPPORT_TIMEOUT: {
+    status: 504,
+    message:
+      "読解サポートがタイムアウトしました。入力を保持したまま再試行できます。",
     retryable: true,
   },
 } as const;
@@ -93,6 +121,11 @@ interface WorkerOptions {
     env: WorkerEnvironment,
     signal: AbortSignal,
   ) => Promise<unknown>;
+  supportReading?: (
+    input: ReadingSupportInput,
+    env: WorkerEnvironment,
+    signal: AbortSignal,
+  ) => Promise<unknown>;
   fetch?: typeof fetch;
   now?: () => Date;
   randomUUID?: () => string;
@@ -123,9 +156,10 @@ class ApiError extends Error {
 function runUntilAborted<T>(
   promise: PromiseLike<T>,
   signal: AbortSignal,
+  timeoutCode: ApiErrorCode = "EVALUATION_TIMEOUT",
 ): Promise<T> {
   return new Promise<T>((resolve, reject) => {
-    const handleAbort = () => reject(new ApiError("EVALUATION_TIMEOUT"));
+    const handleAbort = () => reject(new ApiError(timeoutCode));
 
     if (signal.aborted) {
       handleAbort();
@@ -165,6 +199,7 @@ function createErrorResponse(
   error: ApiError,
   requestId: string,
   headers: Record<string, string> = {},
+  contractVersion = CONTRACT_VERSION,
 ): Response {
   const definition = ERROR_DEFINITIONS[error.code];
   const body: {
@@ -179,7 +214,7 @@ function createErrorResponse(
     requestId: string;
   } = {
     requestId,
-    contractVersion: CONTRACT_VERSION,
+    contractVersion,
     error: {
       code: error.code,
       message: definition.message,
@@ -261,7 +296,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-function validateRequestBody(value: unknown): EvaluationInput {
+function validateEvaluationRequestBody(value: unknown): EvaluationInput {
   const details: ValidationDetail[] = [];
 
   if (!isRecord(value)) {
@@ -271,13 +306,13 @@ function validateRequestBody(value: unknown): EvaluationInput {
   }
 
   const actualFields = Object.keys(value);
-  for (const field of REQUEST_FIELDS) {
+  for (const field of EVALUATION_REQUEST_FIELDS) {
     if (!(field in value)) {
       details.push({ field, reason: "必須項目です。" });
     }
   }
   for (const field of actualFields) {
-    if (!(REQUEST_FIELDS as readonly string[]).includes(field)) {
+    if (!(EVALUATION_REQUEST_FIELDS as readonly string[]).includes(field)) {
       details.push({
         field: characterLength(field) <= 100 ? field : "$",
         reason: "未定義の項目です。",
@@ -321,9 +356,75 @@ function validateRequestBody(value: unknown): EvaluationInput {
   return value as unknown as EvaluationInput;
 }
 
+function validateReadingSupportRequestBody(
+  value: unknown,
+): ReadingSupportInput {
+  const details: ValidationDetail[] = [];
+  if (!isRecord(value)) {
+    throw new ApiError("VALIDATION_ERROR", [
+      { field: "$", reason: "JSONオブジェクトを指定してください。" },
+    ]);
+  }
+
+  for (const field of READING_SUPPORT_REQUEST_FIELDS) {
+    if (!(field in value)) details.push({ field, reason: "必須項目です。" });
+  }
+  for (const field of Object.keys(value)) {
+    if (
+      !(READING_SUPPORT_REQUEST_FIELDS as readonly string[]).includes(field)
+    ) {
+      details.push({
+        field: characterLength(field) <= 100 ? field : "$",
+        reason: "未定義の項目です。",
+      });
+    }
+  }
+  if ("language" in value && value.language !== "python") {
+    details.push({ field: "language", reason: "pythonを指定してください。" });
+  }
+  if ("sourceUrl" in value && !isContractSourceUrl(value.sourceUrl)) {
+    details.push({
+      field: "sourceUrl",
+      reason: "公開GitHub repositoryのPythonファイルURLを指定してください。",
+    });
+  }
+  for (const [field, maximum] of [
+    ["code", 30_000],
+    ["question", 2_000],
+  ] as const) {
+    if (field in value) {
+      if (typeof value[field] !== "string") {
+        details.push({ field, reason: "文字列で入力してください。" });
+      } else if (value[field].trim().length === 0) {
+        details.push({ field, reason: "1文字以上で入力してください。" });
+      } else if (characterLength(value[field]) > maximum) {
+        details.push({
+          field,
+          reason: `${maximum}文字以下で入力してください。`,
+        });
+      }
+    }
+  }
+  if (
+    "stage" in value &&
+    value.stage !== "guide" &&
+    value.stage !== "detailed_explanation"
+  ) {
+    details.push({
+      field: "stage",
+      reason: "guideまたはdetailed_explanationを指定してください。",
+    });
+  }
+  if (details.length > 0) {
+    throw new ApiError("VALIDATION_ERROR", details.slice(0, 20));
+  }
+  return value as unknown as ReadingSupportInput;
+}
+
 async function readJsonBody(
   request: Request,
   deadlineSignal: AbortSignal,
+  timeoutCode: ApiErrorCode = "EVALUATION_TIMEOUT",
 ): Promise<unknown> {
   const contentLength = Number(request.headers.get("Content-Length"));
   if (Number.isFinite(contentLength) && contentLength > MAX_BODY_BYTES) {
@@ -342,6 +443,7 @@ async function readJsonBody(
       const { done, value } = await runUntilAborted(
         reader.read(),
         deadlineSignal,
+        timeoutCode,
       );
       if (done) {
         break;
@@ -357,7 +459,7 @@ async function readJsonBody(
   } catch {
     if (deadlineSignal.aborted) {
       await reader.cancel();
-      throw new ApiError("EVALUATION_TIMEOUT");
+      throw new ApiError(timeoutCode);
     }
     if (totalBytes > MAX_BODY_BYTES) {
       throw new ApiError("PAYLOAD_TOO_LARGE");
@@ -390,6 +492,7 @@ async function verifyPublicSource(
   sourceUrl: string,
   fetchImplementation: typeof fetch,
   deadlineSignal: AbortSignal,
+  timeoutCode: ApiErrorCode = "EVALUATION_TIMEOUT",
 ): Promise<void> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), SOURCE_CHECK_TIMEOUT_MS);
@@ -450,7 +553,7 @@ async function verifyPublicSource(
       throw error;
     }
     if (deadlineSignal.aborted) {
-      throw new ApiError("EVALUATION_TIMEOUT");
+      throw new ApiError(timeoutCode);
     }
     throw new ApiError("INTERNAL_ERROR");
   } finally {
@@ -489,6 +592,7 @@ function secondsUntilNextUtcDay(now: Date): number {
 export function createWorker(options: WorkerOptions = {}): EvaluationWorker {
   const fetchImplementation = options.fetch ?? fetch;
   const evaluate = options.evaluate ?? evaluateWithWorkersAI;
+  const supportReading = options.supportReading ?? supportReadingWithWorkersAI;
   const now = options.now ?? (() => new Date());
   const randomUUID = options.randomUUID ?? (() => crypto.randomUUID());
   const apiTimeoutMs = options.apiTimeoutMs ?? API_TIMEOUT_MS;
@@ -504,6 +608,11 @@ export function createWorker(options: WorkerOptions = {}): EvaluationWorker {
   return {
     async fetch(request: Request, env: WorkerEnvironment): Promise<Response> {
       const requestId = randomUUID();
+      const pathname = new URL(request.url).pathname;
+      const readingSupportRequest = pathname === READING_SUPPORT_PATH;
+      const timeoutCode: ApiErrorCode = readingSupportRequest
+        ? "READING_SUPPORT_TIMEOUT"
+        : "EVALUATION_TIMEOUT";
       let headers: Record<string, string> = {};
       const deadlineController = new AbortController();
       const deadline = scheduleTimeout(
@@ -514,12 +623,14 @@ export function createWorker(options: WorkerOptions = {}): EvaluationWorker {
       try {
         return await runUntilAborted(
           (async () => {
-            const url = new URL(request.url);
-            if (url.pathname !== EVALUATION_PATH) {
+            if (
+              pathname !== EVALUATION_PATH &&
+              pathname !== READING_SUPPORT_PATH
+            ) {
               throw new ApiError("VALIDATION_ERROR", [
                 {
                   field: "$path",
-                  reason: `${EVALUATION_PATH}を指定してください。`,
+                  reason: `${EVALUATION_PATH}または${READING_SUPPORT_PATH}を指定してください。`,
                 },
               ]);
             }
@@ -547,20 +658,66 @@ export function createWorker(options: WorkerOptions = {}): EvaluationWorker {
               ]);
             }
 
-            const input = validateRequestBody(
-              await readJsonBody(request, deadlineController.signal),
+            const requestBody = await readJsonBody(
+              request,
+              deadlineController.signal,
+              timeoutCode,
             );
+            const input = readingSupportRequest
+              ? validateReadingSupportRequestBody(requestBody)
+              : validateEvaluationRequestBody(requestBody);
             await enforceRateLimit(request, origin, env);
             await verifyPublicSource(
               input.sourceUrl,
               fetchImplementation,
               deadlineController.signal,
+              timeoutCode,
             );
+
+            if (readingSupportRequest) {
+              const readingInput = input as ReadingSupportInput;
+              let modelSupport;
+              try {
+                modelSupport = await supportReading(
+                  readingInput,
+                  env,
+                  deadlineController.signal,
+                );
+              } catch (error) {
+                if (error instanceof ModelQuotaError) {
+                  throw new ApiError("RATE_LIMITED", [], {
+                    retryAfterSeconds: secondsUntilNextUtcDay(now()),
+                  });
+                }
+                if (error instanceof ModelTimeoutError) {
+                  throw new ApiError("READING_SUPPORT_TIMEOUT");
+                }
+                if (error instanceof ModelResponseError) {
+                  throw new ApiError("READING_SUPPORT_MODEL_ERROR");
+                }
+                throw new ApiError("INTERNAL_ERROR");
+              }
+
+              try {
+                return jsonResponse(
+                  buildReadingSupportResponse(
+                    modelSupport,
+                    readingInput.stage as ReadingSupportStage,
+                    requestId,
+                    now(),
+                  ),
+                  200,
+                  headers,
+                );
+              } catch {
+                throw new ApiError("READING_SUPPORT_MODEL_ERROR");
+              }
+            }
 
             let modelEvaluation;
             try {
               modelEvaluation = await evaluate(
-                input,
+                input as EvaluationInput,
                 env,
                 deadlineController.signal,
               );
@@ -593,12 +750,16 @@ export function createWorker(options: WorkerOptions = {}): EvaluationWorker {
             return jsonResponse(response, 200, headers);
           })(),
           deadlineController.signal,
+          timeoutCode,
         );
       } catch (error) {
         return createErrorResponse(
           error instanceof ApiError ? error : new ApiError("INTERNAL_ERROR"),
           requestId,
           headers,
+          readingSupportRequest
+            ? READING_SUPPORT_CONTRACT_VERSION
+            : CONTRACT_VERSION,
         );
       } finally {
         cancelTimeout(deadline);

@@ -4,31 +4,47 @@ import path from "node:path";
 import { test } from "node:test";
 import vm from "node:vm";
 
-const [backgroundSource, configSource, contractSource, responseExample] =
-  await Promise.all([
-    readFile(
-      path.join(process.cwd(), "dist/extension/src/background.js"),
-      "utf8",
+const [
+  backgroundSource,
+  configSource,
+  contractSource,
+  readingContractSource,
+  responseExample,
+  readingResponseExample,
+] = await Promise.all([
+  readFile(
+    path.join(process.cwd(), "dist/extension/src/background.js"),
+    "utf8",
+  ),
+  readFile(
+    path.join(process.cwd(), "dist/extension/src/evaluation-config.js"),
+    "utf8",
+  ),
+  readFile(
+    path.join(process.cwd(), "dist/extension/src/evaluation-contract.js"),
+    "utf8",
+  ),
+  readFile(
+    path.join(process.cwd(), "dist/extension/src/reading-support-contract.js"),
+    "utf8",
+  ),
+  readFile(
+    path.join(process.cwd(), "contracts/evaluation/v1/examples/response.json"),
+    "utf8",
+  ).then(JSON.parse),
+  readFile(
+    path.join(
+      process.cwd(),
+      "contracts/reading-support/v1/examples/response-guide.json",
     ),
-    readFile(
-      path.join(process.cwd(), "dist/extension/src/evaluation-config.js"),
-      "utf8",
-    ),
-    readFile(
-      path.join(process.cwd(), "dist/extension/src/evaluation-contract.js"),
-      "utf8",
-    ),
-    readFile(
-      path.join(
-        process.cwd(),
-        "contracts/evaluation/v1/examples/response.json",
-      ),
-      "utf8",
-    ).then(JSON.parse),
-  ]);
+    "utf8",
+  ).then(JSON.parse),
+]);
 
 const apiUrl =
   "https://code-reading-trainer-evaluation-api.test.workers.dev/v1/evaluations";
+const readingApiUrl =
+  "https://code-reading-trainer-evaluation-api.test.workers.dev/v1/reading-support";
 const extensionId = "test-extension-id";
 const sidepanelUrl = `chrome-extension://${extensionId}/src/sidepanel.html`;
 
@@ -99,9 +115,11 @@ function createBackgroundEnvironment({
   if (configuredUrl !== null) {
     context.CodeReadingTrainerEvaluationConfig = Object.freeze({
       getEvaluationApiUrl: () => configuredUrl,
+      getReadingSupportApiUrl: () => readingApiUrl,
     });
   }
   vm.runInContext(contractSource, context);
+  vm.runInContext(readingContractSource, context);
   vm.runInContext(backgroundSource, context);
 
   return {
@@ -132,6 +150,20 @@ function evaluationMessage(overrides = {}) {
       sourceUrl: "https://github.com/example/project/blob/main/example.py",
       code: "return value",
       explanation: "値を返します。",
+      ...overrides,
+    },
+  };
+}
+
+function readingMessage(overrides = {}) {
+  return {
+    type: "REQUEST_READING_SUPPORT",
+    request: {
+      language: "python",
+      sourceUrl: "https://github.com/example/project/blob/main/example.py",
+      code: "return value",
+      question: "value の流れを理解したい",
+      stage: "guide",
       ...overrides,
     },
   };
@@ -343,5 +375,55 @@ test("並行する同一回答は1回の評価API通信を共有する", async (
   assert.deepEqual(
     JSON.parse(JSON.stringify(secondResponse)),
     JSON.parse(JSON.stringify(firstResponse)),
+  );
+});
+
+test("読解サポートは専用URLへ専用リクエストをPOSTする", async () => {
+  const environment = createBackgroundEnvironment({
+    configuredUrl: apiUrl,
+    fetchImpl: async () => jsonResponse(readingResponseExample),
+  });
+  const message = readingMessage();
+  const result = await environment.send(message).response;
+
+  assert.deepEqual(JSON.parse(JSON.stringify(result)), {
+    ok: true,
+    response: readingResponseExample,
+  });
+  assert.equal(environment.fetchCalls.length, 1);
+  assert.equal(environment.fetchCalls[0][0], readingApiUrl);
+  assert.deepEqual(
+    JSON.parse(environment.fetchCalls[0][1].body),
+    message.request,
+  );
+});
+
+test("読解サポートの空質問は外部送信前に拒否する", async () => {
+  const environment = createBackgroundEnvironment({ configuredUrl: apiUrl });
+  const result = await environment.send(readingMessage({ question: " " }))
+    .response;
+  assert.equal(result.ok, false);
+  assert.equal(result.error.code, "VALIDATION_ERROR");
+  assert.equal(environment.fetchCalls.length, 0);
+});
+
+test("並行する同じ読解リクエストは1回のAPI通信を共有する", async () => {
+  let finishFetch;
+  const environment = createBackgroundEnvironment({
+    configuredUrl: apiUrl,
+    fetchImpl: () =>
+      new Promise((resolve) => {
+        finishFetch = resolve;
+      }),
+  });
+  const first = environment.send(readingMessage());
+  const second = environment.send(readingMessage());
+  await Promise.resolve();
+  assert.equal(environment.fetchCalls.length, 1);
+  finishFetch(jsonResponse(readingResponseExample));
+  const [one, two] = await Promise.all([first.response, second.response]);
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(one)),
+    JSON.parse(JSON.stringify(two)),
   );
 });

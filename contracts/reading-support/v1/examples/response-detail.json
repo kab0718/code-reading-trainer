@@ -1,0 +1,12 @@
+{
+  "requestId": "57d8d07a-2596-4f11-851d-ace9b27b25d1",
+  "contractVersion": "1.0",
+  "stage": "detailed_explanation",
+  "focusPoints": [],
+  "checks": [],
+  "questions": [],
+  "hints": [],
+  "nextCandidates": [],
+  "detailedExplanation": "normalize は value の前後の空白を strip で取り除き、その結果を lower で小文字にして返します。value の具体的な型や呼び出し元は、選択範囲からは確認できません。",
+  "generatedAt": "2026-08-24T00:00:00Z"
+}

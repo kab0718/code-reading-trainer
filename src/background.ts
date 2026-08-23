@@ -1,9 +1,17 @@
-importScripts("evaluation-config.js", "evaluation-contract.js");
+importScripts(
+  "evaluation-config.js",
+  "evaluation-contract.js",
+  "reading-support-contract.js",
+);
 
 (() => {
   const EVALUATION_TIMEOUT_MS = 30_000;
   const MAX_REQUEST_BYTES = 64 * 1024;
   const inFlightEvaluations = new Map<
+    string,
+    Promise<EvaluationWorkerResult>
+  >();
+  const inFlightReadingSupport = new Map<
     string,
     Promise<EvaluationWorkerResult>
   >();
@@ -28,6 +36,20 @@ importScripts("evaluation-config.js", "evaluation-contract.js");
       typeof value.sourceUrl === "string" &&
       typeof value.code === "string" &&
       typeof value.explanation === "string"
+    );
+  }
+
+  function isReadingSupportRequest(
+    value: unknown,
+  ): value is ReadingSupportRequest {
+    return (
+      isRecord(value) &&
+      Object.keys(value).length === 5 &&
+      value.language === "python" &&
+      typeof value.sourceUrl === "string" &&
+      typeof value.code === "string" &&
+      typeof value.question === "string" &&
+      (value.stage === "guide" || value.stage === "detailed_explanation")
     );
   }
 
@@ -67,6 +89,27 @@ importScripts("evaluation-config.js", "evaluation-contract.js");
       return "評価するコードと回答の合計サイズが上限を超えています。";
     }
 
+    return null;
+  }
+
+  function validateReadingSupportRequest(
+    request: ReadingSupportRequest,
+  ): string | null {
+    if (
+      !isValidSourceUrl(request.sourceUrl) ||
+      request.code.trim().length === 0 ||
+      request.question.trim().length === 0 ||
+      countCharacters(request.code) > 30_000 ||
+      countCharacters(request.question) > 2_000
+    ) {
+      return "読解するコードと質問・調査目的を確認してください。";
+    }
+    if (
+      new TextEncoder().encode(JSON.stringify(request)).byteLength >
+      MAX_REQUEST_BYTES
+    ) {
+      return "読解するコードと質問・調査目的の合計サイズが上限を超えています。";
+    }
     return null;
   }
 
@@ -162,12 +205,107 @@ importScripts("evaluation-config.js", "evaluation-contract.js");
     );
   }
 
+  async function requestReadingSupport(
+    request: ReadingSupportRequest,
+  ): Promise<EvaluationWorkerResult> {
+    const validationMessage = validateReadingSupportRequest(request);
+    if (validationMessage) {
+      return createError("VALIDATION_ERROR", validationMessage, false);
+    }
+    const apiUrl =
+      globalThis.CodeReadingTrainerEvaluationConfig.getReadingSupportApiUrl?.();
+    if (!apiUrl) {
+      return createError(
+        "API_NOT_CONFIGURED",
+        "読解サポートAPIの接続先が設定されていません。",
+        false,
+      );
+    }
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), EVALUATION_TIMEOUT_MS);
+    let response: Response;
+    let body: unknown;
+    let receivedResponse = false;
+    try {
+      response = await fetch(apiUrl, {
+        body: JSON.stringify(request),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+        signal: controller.signal,
+      });
+      receivedResponse = true;
+      body = await response.json();
+    } catch {
+      if (controller.signal.aborted) {
+        return createError(
+          "READING_SUPPORT_TIMEOUT",
+          "読解サポートがタイムアウトしました。入力は保持されています。",
+          true,
+        );
+      }
+      return receivedResponse
+        ? createError(
+            "INVALID_API_RESPONSE",
+            "読解サポートAPIから不正な応答を受信しました。入力は保持されています。",
+            true,
+          )
+        : createError(
+            "NETWORK_ERROR",
+            "読解サポートAPIに接続できませんでした。入力は保持されています。",
+            true,
+          );
+    } finally {
+      clearTimeout(timeout);
+    }
+
+    const successfulResponse =
+      globalThis.CodeReadingTrainerReadingSupportContract.parseResponse(body);
+    if (response.ok && successfulResponse) {
+      return {
+        ok: true,
+        response: successfulResponse,
+      } as EvaluationWorkerResult;
+    }
+    const errorResponse =
+      globalThis.CodeReadingTrainerReadingSupportContract.parseError(body);
+    if (!response.ok && errorResponse) {
+      return { error: errorResponse, ok: false };
+    }
+    return createError(
+      "INVALID_API_RESPONSE",
+      "読解サポートAPIから不正な応答を受信しました。入力は保持されています。",
+      true,
+    );
+  }
+
   chrome.runtime.onMessage.addListener(
     (message: unknown, sender, sendResponse) => {
       if (
         sender.id !== chrome.runtime.id ||
         sender.url !== chrome.runtime.getURL("src/sidepanel.html") ||
-        !isRecord(message) ||
+        !isRecord(message)
+      ) {
+        return false;
+      }
+
+      if (
+        message.type === "REQUEST_READING_SUPPORT" &&
+        isReadingSupportRequest(message.request)
+      ) {
+        const requestKey = JSON.stringify(message.request);
+        let support = inFlightReadingSupport.get(requestKey);
+        if (!support) {
+          support = requestReadingSupport(message.request).finally(() => {
+            inFlightReadingSupport.delete(requestKey);
+          });
+          inFlightReadingSupport.set(requestKey, support);
+        }
+        void support.then(sendResponse);
+        return true;
+      }
+
+      if (
         message.type !== "EVALUATE_ANSWER" ||
         !isEvaluationRequest(message.request)
       ) {

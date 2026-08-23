@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://code-reading-trainer.example/contracts/reading-support/v1/reading-support-response.schema.json",
+  "title": "ReadingSupportResponseV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "requestId",
+    "contractVersion",
+    "stage",
+    "focusPoints",
+    "checks",
+    "questions",
+    "hints",
+    "nextCandidates",
+    "detailedExplanation",
+    "generatedAt"
+  ],
+  "properties": {
+    "requestId": { "type": "string", "format": "uuid" },
+    "contractVersion": { "const": "1.0" },
+    "stage": { "enum": ["guide", "detailed_explanation"] },
+    "focusPoints": { "$ref": "#/$defs/textList" },
+    "checks": { "$ref": "#/$defs/textList" },
+    "questions": { "$ref": "#/$defs/textList" },
+    "hints": { "$ref": "#/$defs/textList" },
+    "nextCandidates": {
+      "type": "array",
+      "maxItems": 5,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["symbol", "reason"],
+        "properties": {
+          "symbol": { "type": "string", "minLength": 1, "maxLength": 200 },
+          "reason": { "type": "string", "minLength": 1, "maxLength": 700 }
+        }
+      }
+    },
+    "detailedExplanation": { "type": ["string", "null"], "maxLength": 5000 },
+    "generatedAt": { "type": "string", "format": "date-time" }
+  },
+  "$defs": {
+    "textList": {
+      "type": "array",
+      "maxItems": 5,
+      "items": { "type": "string", "minLength": 1, "maxLength": 700 }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "stage": { "const": "guide" } },
+        "required": ["stage"]
+      },
+      "then": {
+        "properties": {
+          "focusPoints": { "type": "array", "minItems": 1 },
+          "checks": { "type": "array", "minItems": 1 },
+          "questions": { "type": "array", "minItems": 1 },
+          "hints": { "type": "array", "minItems": 1 },
+          "detailedExplanation": { "type": "null" }
+        }
+      },
+      "else": {
+        "properties": {
+          "focusPoints": { "type": "array", "maxItems": 0 },
+          "checks": { "type": "array", "maxItems": 0 },
+          "questions": { "type": "array", "maxItems": 0 },
+          "hints": { "type": "array", "maxItems": 0 },
+          "nextCandidates": { "type": "array", "maxItems": 0 },
+          "detailedExplanation": { "type": "string", "minLength": 1 }
+        }
+      }
+    }
+  ]
+}
