@@ -70,8 +70,26 @@
         ? `${repo.ownerLogin}/${repo.name}`
         : undefined;
     const repositoryPublic = repo?.public;
+    const commitOidCandidates = [
+      blobRoute?.commitOid,
+      blobRoute?.oid,
+      isRecord(blobRoute?.commit) ? blobRoute.commit.oid : undefined,
+      layoutRoute?.commitOid,
+      isRecord(blobRefInfo) ? blobRefInfo.oid : undefined,
+      isRecord(blobRefInfo) ? blobRefInfo.currentOid : undefined,
+      isRecord(layoutRefInfo) ? layoutRefInfo.oid : undefined,
+      isRecord(layoutRefInfo) ? layoutRefInfo.currentOid : undefined,
+      payload.commitOid,
+      payload.currentOid,
+    ];
+    const commitOid = commitOidCandidates.find(
+      (value): value is string =>
+        typeof value === "string" &&
+        /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/iu.test(value),
+    );
 
     return {
+      commitOid,
       path: typeof path === "string" ? path : undefined,
       ref: typeof ref === "string" ? ref : undefined,
       repository,
@@ -230,6 +248,9 @@
     }
 
     return {
+      ...(embeddedDetails.commitOid
+        ? { commitOid: embeddedDetails.commitOid }
+        : {}),
       status: PAGE_STATUS.ELIGIBLE,
       reason: null,
       url: parsedUrl.href,

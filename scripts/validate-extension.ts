@@ -7,7 +7,10 @@ import vm from "node:vm";
 const projectRoot = path.join(process.cwd(), "dist/extension");
 const manifestPath = path.join(projectRoot, "manifest.json");
 const allowedPermissions = new Set(["activeTab", "sidePanel", "storage"]);
-const allowedHostPermissions = new Set(["https://github.com/*"]);
+const allowedHostPermissions = new Set([
+  "https://github.com/*",
+  "https://api.github.com/*",
+]);
 const allowedOptionalHostPermissions = new Set(["https://*.workers.dev/*"]);
 const allowedContentScriptMatches = new Set(["https://github.com/*"]);
 const production = process.argv.slice(2).includes("--production");

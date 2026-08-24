@@ -56,11 +56,12 @@ interface MockFetchInit {
 }
 
 interface MockResponse {
-  json(): Promise<unknown>;
+  json?(): Promise<unknown>;
   ok: boolean;
 }
 
 interface BackgroundEnvironmentOptions {
+  candidateTabContext?: Record<string, unknown> | null;
   configuredUrl?: string | null;
   fetchImpl?: (
     url: string,
@@ -70,6 +71,7 @@ interface BackgroundEnvironmentOptions {
 }
 
 function createBackgroundEnvironment({
+  candidateTabContext = null,
   configuredUrl = null,
   fetchImpl = async () => {
     throw new Error("unexpected fetch");
@@ -86,6 +88,8 @@ function createBackgroundEnvironment({
     Object,
     Set,
     TextEncoder,
+    TextDecoder,
+    Uint8Array,
     URL,
     chrome: {
       runtime: {
@@ -101,6 +105,14 @@ function createBackgroundEnvironment({
         },
       },
       sidePanel: { setPanelBehavior() {} },
+      tabs: {
+        async get() {
+          return { id: 1, url: candidateTabContext?.url };
+        },
+        async sendMessage() {
+          return candidateTabContext;
+        },
+      },
     },
     clearTimeout,
     async fetch(url: string, init: MockFetchInit) {
@@ -168,6 +180,23 @@ function readingMessage(overrides = {}) {
   };
 }
 
+function candidatesMessage(overrides = {}) {
+  return {
+    type: "REQUEST_TRAINING_CANDIDATES",
+    tabId: 1,
+    requestId: "candidate-request-1",
+    context: {
+      commitOid: "a".repeat(40),
+      path: "example.py",
+      ref: "main",
+      repository: "example/project",
+      status: "eligible",
+      url: "https://github.com/example/project/blob/main/example.py",
+      ...overrides,
+    },
+  };
+}
+
 function jsonResponse(body, { ok = true } = {}) {
   return {
     ok,
@@ -183,6 +212,57 @@ test("評価メッセージ以外は処理しない", async () => {
 
   assert.equal(result.keepsChannelOpen, false);
   assert.equal(await result.response, undefined);
+  assert.equal(environment.fetchCalls.length, 0);
+});
+
+test("GitHubのimmutable commitからPython候補を抽出して返す", async () => {
+  const source = [
+    "def normalize(value):",
+    "    result = str(value)",
+    "    if not result:",
+    "        return None",
+    "    return result",
+  ].join("\n");
+  const environment = createBackgroundEnvironment({
+    candidateTabContext: candidatesMessage().context,
+    fetchImpl: async () => ({
+      ok: true,
+      headers: {
+        get(name) {
+          return name.toLowerCase() === "content-type" ? "text/plain" : null;
+        },
+      },
+      body: null,
+      async arrayBuffer() {
+        return new TextEncoder().encode(source).buffer;
+      },
+    }),
+  });
+
+  const response = await environment.send(candidatesMessage()).response;
+
+  assert.equal(response.ok, true);
+  assert.equal(response.candidates.length, 1);
+  assert.equal(response.candidates[0].name, "normalize");
+  assert.equal(
+    response.candidates[0].sourceUrl,
+    `https://github.com/example/project/blob/${"a".repeat(40)}/example.py`,
+  );
+  assert.match(environment.fetchCalls[0][0].toString(), /ref=a{40}$/u);
+});
+
+test("候補contextが現在のタブと一致しなければGitHubへ接続しない", async () => {
+  const environment = createBackgroundEnvironment({
+    candidateTabContext: {
+      ...candidatesMessage().context,
+      commitOid: "b".repeat(40),
+    },
+  });
+
+  const response = await environment.send(candidatesMessage()).response;
+
+  assert.equal(response.ok, false);
+  assert.equal(response.error.code, "INVALID_CONTEXT");
   assert.equal(environment.fetchCalls.length, 0);
 });
 

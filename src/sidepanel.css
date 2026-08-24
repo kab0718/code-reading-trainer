@@ -66,6 +66,38 @@ button:disabled {
   cursor: not-allowed;
 }
 
+.candidate-list {
+  display: grid;
+  gap: 12px;
+}
+
+.candidate-card {
+  padding: 14px;
+  border: 1px solid #d8ddd8;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.candidate-card h3,
+.candidate-card p {
+  margin: 0 0 8px;
+}
+
+.candidate-card p {
+  color: #58605a;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.candidate-metadata {
+  font-weight: 650;
+}
+
+#candidate-free-training-button {
+  color: #315a40;
+  background: transparent;
+}
+
 pre {
   max-height: 220px;
   overflow: auto;

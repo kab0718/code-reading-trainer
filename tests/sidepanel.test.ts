@@ -35,6 +35,7 @@ const sidepanelHtmlSource = await readFile(
 
 function eligibleContext(filePath) {
   return {
+    commitOid: "a".repeat(40),
     status: "eligible",
     reason: null,
     url: `https://github.com/example/project/blob/main/${filePath}`,
@@ -120,6 +121,16 @@ function createSidepanelEnvironment({
     ok: true,
     response: readingSupportResponse(message.request.stage),
   });
+  let candidatesHandler = async (message) => ({
+    candidates: [],
+    contextKey: JSON.stringify([
+      message.context.repository,
+      message.context.commitOid,
+      message.context.path,
+    ]),
+    ok: true,
+    requestId: message.requestId,
+  });
   const evaluationMessages = [];
   const permissionRequests = [];
   let pageContextRequests = 0;
@@ -172,6 +183,20 @@ function createSidepanelEnvironment({
     "#selection-button": createElement("#selection-button", {
       disabled: false,
     }),
+    "#recommendation-button": createElement("#recommendation-button", {
+      disabled: false,
+    }),
+    "#candidate-section": createElement("#candidate-section", {
+      hidden: true,
+    }),
+    "#candidate-status": createElement("#candidate-status", {
+      textContent: "",
+    }),
+    "#candidate-list": createElement("#candidate-list", { children: [] }),
+    "#candidate-free-training-button": createElement(
+      "#candidate-free-training-button",
+      {},
+    ),
     "#selection": createElement("#selection", { hidden: true }),
     "#selected-code": createElement("#selected-code", { textContent: "" }),
     "#training-input": createElement("#training-input", { hidden: false }),
@@ -266,9 +291,13 @@ function createSidepanelEnvironment({
       runtime: {
         async sendMessage(message) {
           evaluationMessages.push(message);
-          return message.type === "REQUEST_READING_SUPPORT"
-            ? readingHandler(message)
-            : evaluationHandler();
+          if (message.type === "REQUEST_READING_SUPPORT") {
+            return readingHandler(message);
+          }
+          if (message.type === "REQUEST_TRAINING_CANDIDATES") {
+            return candidatesHandler(message);
+          }
+          return evaluationHandler();
         },
         onMessage: {
           addListener(listener) {
@@ -338,6 +367,15 @@ function createSidepanelEnvironment({
     chooseReadingMode() {
       return listeners.get("#reading-mode-button:click")();
     },
+    requestCandidates() {
+      return listeners.get("#recommendation-button:click")();
+    },
+    chooseRenderedCandidate() {
+      return listeners.get("<button>:click")();
+    },
+    chooseFreeTraining() {
+      return listeners.get("#candidate-free-training-button:click")();
+    },
     chooseTrainingMode() {
       return listeners.get("#training-mode-button:click")();
     },
@@ -380,6 +418,9 @@ function createSidepanelEnvironment({
     setReadingHandler(handler) {
       readingHandler = handler;
     },
+    setCandidatesHandler(handler) {
+      candidatesHandler = handler;
+    },
     storage,
     runTimers() {
       const callbacks = [...timers.values()];
@@ -416,6 +457,118 @@ function elementText(element) {
 test("回答フォームで1回限りのルールを明示する", () => {
   assert.match(sidepanelHtmlSource, /回答は1回限りです/u);
   assert.match(sidepanelHtmlSource, /再評価したりすることはできません/u);
+});
+
+test("おすすめ候補を選ぶとimmutable URLで既存の採点フローへ渡す", async () => {
+  const environment = createSidepanelEnvironment();
+  await flushPromises();
+  const commitOid = "a".repeat(40);
+  const sourceUrl = `https://github.com/example/project/blob/${commitOid}/first.py`;
+  environment.setCandidatesHandler(async (message) => ({
+    candidates: [
+      {
+        code: "def normalize(value):\n    result = str(value)\n    return result",
+        difficulty: "初級",
+        endLine: 3,
+        estimatedMinutes: 5,
+        id: "function:normalize:1",
+        kind: "function",
+        level: "recommended",
+        name: "normalize",
+        reason: "処理の流れを追いやすい候補です。",
+        sourceUrl,
+        startLine: 1,
+      },
+    ],
+    contextKey: JSON.stringify([
+      message.context.repository,
+      message.context.commitOid,
+      message.context.path,
+    ]),
+    ok: true,
+    requestId: message.requestId,
+  }));
+
+  await environment.requestCandidates();
+  assert.match(
+    environment.elements["#candidate-status"].textContent,
+    /1件の候補/u,
+  );
+  environment.chooseRenderedCandidate();
+  environment.inputExplanation("文字列へ変換した値を返します。");
+  await environment.submit().completion;
+
+  const evaluationMessage = environment.evaluationMessages.find(
+    (message) => message.type === "EVALUATE_ANSWER",
+  );
+  assert.equal(evaluationMessage.request.sourceUrl, sourceUrl);
+  assert.match(evaluationMessage.request.code, /def normalize/u);
+  assert.equal(environment.elements["#total-score-value"].textContent, "82");
+});
+
+test("候補なしでも自由トレーニングへ案内して操作を続けられる", async () => {
+  const environment = createSidepanelEnvironment();
+  await flushPromises();
+
+  await environment.requestCandidates();
+
+  assert.match(
+    environment.elements["#candidate-status"].textContent,
+    /候補が見つかりません/u,
+  );
+  environment.chooseFreeTraining();
+  assert.equal(environment.elements["#candidate-section"].hidden, true);
+  assert.match(environment.elements["#status"].textContent, /コードを選択/u);
+  assert.equal(environment.elements["#selection-button"].disabled, false);
+});
+
+test("ページ遷移を検知した時点で古い候補レスポンスを破棄する", async () => {
+  const environment = createSidepanelEnvironment();
+  await flushPromises();
+  let finishCandidates;
+  environment.setCandidatesHandler(
+    (message) =>
+      new Promise((resolve) => {
+        finishCandidates = () =>
+          resolve({
+            candidates: [
+              {
+                code: "def stale(value):\n    result = value + 1\n    return result",
+                difficulty: "初級",
+                endLine: 3,
+                estimatedMinutes: 5,
+                id: "function:stale:1",
+                kind: "function",
+                level: "recommended",
+                name: "stale",
+                reason: "古い候補です。",
+                sourceUrl: `https://github.com/example/project/blob/${"a".repeat(40)}/first.py`,
+                startLine: 1,
+              },
+            ],
+            contextKey: JSON.stringify([
+              message.context.repository,
+              message.context.commitOid,
+              message.context.path,
+            ]),
+            ok: true,
+            requestId: message.requestId,
+          });
+      }),
+  );
+
+  const pending = environment.requestCandidates();
+  await flushPromises();
+  environment.navigate({
+    ...eligibleContext("second.py"),
+    commitOid: "b".repeat(40),
+    url: "https://github.com/example/project/blob/main/second.py",
+  });
+  finishCandidates();
+  await pending;
+
+  assert.equal(environment.elements["#candidate-list"].children.length, 0);
+  assert.equal(environment.elements["#candidate-section"].hidden, true);
 });
 
 test("採点結果から新しいトレーニングを開始できる", () => {

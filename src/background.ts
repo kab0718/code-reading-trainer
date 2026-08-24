@@ -4,6 +4,8 @@ importScripts(
   "reading-support-contract.js",
 );
 
+import { requestTrainingCandidates } from "./python-candidates.js";
+
 (() => {
   const EVALUATION_TIMEOUT_MS = 36_000;
   const MAX_REQUEST_BYTES = 64 * 1024;
@@ -128,6 +130,59 @@ importScripts(
       },
       ok: false,
     };
+  }
+
+  function candidateContextKey(value: unknown): string {
+    if (!isRecord(value)) return "invalid";
+    return JSON.stringify([
+      value.repository ?? null,
+      value.commitOid ?? null,
+      value.path ?? null,
+    ]);
+  }
+
+  async function requestCandidatesFromCurrentTab(
+    context: unknown,
+    requestId: string,
+    tabId: unknown,
+  ): Promise<TrainingCandidatesWorkerResult> {
+    const invalid = (): TrainingCandidatesWorkerResult => ({
+      contextKey: candidateContextKey(context),
+      error: {
+        code: "INVALID_CONTEXT",
+        message: "表示中のファイルが変わったため、候補を取得できませんでした。",
+        retryable: false,
+      },
+      ok: false,
+      requestId,
+    });
+    if (
+      !Number.isInteger(tabId) ||
+      (tabId as number) < 0 ||
+      !isRecord(context)
+    ) {
+      return invalid();
+    }
+    try {
+      const tab = await chrome.tabs.get(tabId as number);
+      if (!tab.url || tab.url !== context.url) return invalid();
+      const latest = (await chrome.tabs.sendMessage(tabId as number, {
+        type: "GET_PAGE_CONTEXT",
+      })) as unknown;
+      if (!isRecord(latest) || latest.status !== "eligible") return invalid();
+      for (const field of [
+        "url",
+        "repository",
+        "ref",
+        "path",
+        "commitOid",
+      ] as const) {
+        if (latest[field] !== context[field]) return invalid();
+      }
+      return requestTrainingCandidates(context, requestId);
+    } catch {
+      return invalid();
+    }
   }
 
   async function evaluateAnswer(
@@ -287,6 +342,19 @@ importScripts(
         !isRecord(message)
       ) {
         return false;
+      }
+
+      if (
+        message.type === "REQUEST_TRAINING_CANDIDATES" &&
+        typeof message.requestId === "string" &&
+        message.requestId.length <= 100
+      ) {
+        void requestCandidatesFromCurrentTab(
+          message.context,
+          message.requestId,
+          message.tabId,
+        ).then(sendResponse);
+        return true;
       }
 
       if (

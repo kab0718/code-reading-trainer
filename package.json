@@ -25,10 +25,12 @@
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
+    "@lezer/python": "^1.1.18",
     "@types/chrome": "^0.2.6",
     "@types/node": "^26.2.0",
     "ajv": "^8.18.0",
     "ajv-formats": "^3.0.1",
+    "esbuild": "^0.28.1",
     "eslint": "10.8.1",
     "globals": "17.11.0",
     "prettier": "3.9.6",

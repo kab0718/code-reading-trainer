@@ -12,6 +12,15 @@
     requireElement<HTMLElement>("#training-methods");
   const selectionButton =
     requireElement<HTMLButtonElement>("#selection-button");
+  const recommendationButton = requireElement<HTMLButtonElement>(
+    "#recommendation-button",
+  );
+  const candidateSection = requireElement<HTMLElement>("#candidate-section");
+  const candidateStatus = requireElement<HTMLElement>("#candidate-status");
+  const candidateList = requireElement<HTMLElement>("#candidate-list");
+  const candidateFreeTrainingButton = requireElement<HTMLButtonElement>(
+    "#candidate-free-training-button",
+  );
   const selectionSection = requireElement<HTMLFormElement>("#selection");
   const selectedCodeElement = requireElement<HTMLElement>("#selected-code");
   const trainingInputElement = requireElement<HTMLElement>("#training-input");
@@ -105,6 +114,8 @@
       "invalid-url": "現在のページURLを確認できませんでした。",
     });
   let activePageKey: string | null = null;
+  let activeCandidateContextKey: string | null = null;
+  let candidateRequestAttempt = 0;
   let selectedSourceUrl: string | null = null;
   let evaluationState: EvaluationUiState = { status: "editing" };
   let evaluationAttempt = 0;
@@ -199,7 +210,10 @@
       };
     }
 
-    return chrome.tabs.sendMessage(tab.id, { type: "GET_PAGE_CONTEXT" });
+    const context = (await chrome.tabs.sendMessage(tab.id, {
+      type: "GET_PAGE_CONTEXT",
+    })) as PageContext;
+    return { ...context, tabId: tab.id };
   }
 
   function resetSelection(): void {
@@ -214,6 +228,12 @@
     readingStatusMessage = null;
     selectedMode = "training";
     selectedSourceUrl = null;
+    candidateRequestAttempt += 1;
+    activeCandidateContextKey = null;
+    candidateSection.hidden = true;
+    candidateStatus.textContent = "";
+    candidateList.replaceChildren();
+    recommendationButton.disabled = activePageKey === null;
     selectedCodeElement.textContent = "";
     explanationElement.value = "";
     explanationElement.readOnly = false;
@@ -629,13 +649,19 @@
   ): void {
     const isEligible = context.status === PAGE_STATUS.ELIGIBLE;
     const nextPageKey = isEligible
-      ? JSON.stringify([context.repository, context.ref, context.path])
+      ? JSON.stringify([
+          context.repository,
+          context.commitOid ?? null,
+          context.ref,
+          context.path,
+        ])
       : null;
     selectionButton.disabled =
       !isEligible ||
       isEvaluationLocked() ||
       readingSubmitting ||
       readingGuide !== null;
+    recommendationButton.disabled = !isEligible || !context.commitOid;
 
     if (isEligible) {
       if (
@@ -646,6 +672,9 @@
         resetSelection();
       }
       activePageKey = nextPageKey;
+      activeCandidateContextKey = context.commitOid
+        ? JSON.stringify([context.repository, context.commitOid, context.path])
+        : null;
       selectionButton.disabled =
         isEvaluationLocked() || readingSubmitting || readingGuide !== null;
       if (
@@ -680,6 +709,11 @@
 
   async function updateStatus(selectionAlreadyReset = false): Promise<void> {
     const attempt = ++pageContextAttempt;
+    candidateRequestAttempt += 1;
+    activeCandidateContextKey = null;
+    candidateSection.hidden = true;
+    candidateStatus.textContent = "";
+    candidateList.replaceChildren();
     try {
       const context = await getPageContext();
       if (attempt !== pageContextAttempt) return;
@@ -727,6 +761,102 @@
     if (selectedMode === "reading_support") {
       void requestReadingSupport("guide");
     }
+  });
+
+  function startTrainingWithCode(code: string, sourceUrl: string): void {
+    resetSelection();
+    selectedCodeElement.textContent = code;
+    selectedSourceUrl = sourceUrl;
+    selectionSection.hidden = false;
+    statusElement.textContent =
+      "選んだ候補を読み、自分の言葉で説明してみましょう。";
+    updateInputValidation();
+    updateReadingInputValidation();
+  }
+
+  function renderCandidates(candidates: TrainingCandidate[]): void {
+    candidateList.replaceChildren();
+    const levelLabels: Record<TrainingCandidateLevel, string> = {
+      warmup: "ウォームアップ",
+      recommended: "おすすめ",
+      challenge: "チャレンジ",
+    };
+    for (const candidate of candidates) {
+      const article = document.createElement("article");
+      article.className = "candidate-card";
+      const title = document.createElement("h3");
+      title.textContent = `${levelLabels[candidate.level]}: ${candidate.name}`;
+      const metadata = document.createElement("p");
+      metadata.className = "candidate-metadata";
+      metadata.textContent = `${candidate.difficulty} · 約${candidate.estimatedMinutes}分 · ${candidate.kind === "method" ? "メソッド" : "関数"} · ${candidate.startLine}〜${candidate.endLine}行`;
+      const reason = document.createElement("p");
+      reason.textContent = candidate.reason;
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = "この候補でトレーニングする";
+      button.addEventListener("click", () =>
+        startTrainingWithCode(candidate.code, candidate.sourceUrl),
+      );
+      article.append(title, metadata, reason, button);
+      candidateList.append(article);
+    }
+  }
+
+  recommendationButton.addEventListener("click", async () => {
+    if (isEvaluationLocked() || readingSubmitting) return;
+    const requestAttempt = ++candidateRequestAttempt;
+    recommendationButton.disabled = true;
+    candidateSection.hidden = false;
+    candidateList.replaceChildren();
+    candidateStatus.textContent = "現在のファイルから候補を探しています…";
+    try {
+      const context = await getPageContext();
+      if (requestAttempt !== candidateRequestAttempt) return;
+      if (context.status !== PAGE_STATUS.ELIGIBLE || !context.commitOid) {
+        candidateStatus.textContent =
+          "表示中のcommitを確認できません。コードを選択して自由トレーニングを始めてください。";
+        return;
+      }
+      applyPageContext(context);
+      const requestId = `${Date.now()}-${requestAttempt}`;
+      const response = (await chrome.runtime.sendMessage({
+        context,
+        requestId,
+        tabId: context.tabId,
+        type: "REQUEST_TRAINING_CANDIDATES",
+      })) as TrainingCandidatesWorkerResult;
+      if (
+        requestAttempt !== candidateRequestAttempt ||
+        response.requestId !== requestId ||
+        response.contextKey !== activeCandidateContextKey
+      )
+        return;
+      if (response.ok === false) {
+        candidateStatus.textContent = `${response.error.message} コードを選択して自由トレーニングを始められます。`;
+        return;
+      }
+      if (response.candidates.length === 0) {
+        candidateStatus.textContent =
+          "学習向きの候補が見つかりませんでした。コードを選択して自由トレーニングを始めてください。";
+        return;
+      }
+      candidateStatus.textContent = `${response.candidates.length}件の候補が見つかりました。`;
+      renderCandidates(response.candidates);
+    } catch {
+      if (requestAttempt !== candidateRequestAttempt) return;
+      candidateStatus.textContent =
+        "候補を取得できませんでした。コードを選択して自由トレーニングを始めてください。";
+    } finally {
+      if (requestAttempt === candidateRequestAttempt) {
+        recommendationButton.disabled = activePageKey === null;
+      }
+    }
+  });
+
+  candidateFreeTrainingButton.addEventListener("click", () => {
+    candidateSection.hidden = true;
+    statusElement.textContent =
+      "GitHub上で説明したいコードを選択してください。";
   });
 
   detailButton.addEventListener("click", () => {
