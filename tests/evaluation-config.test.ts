@@ -9,8 +9,8 @@ const evaluationConfigSource = await readFile(
   "utf8",
 );
 
-test("評価API URLが未決定の配布物は外部送信先を持たない", () => {
-  const context = vm.createContext({ Object });
+test("通常ビルドでは評価API URLと接続許可先を設定しない", () => {
+  const context = vm.createContext({ Object, URL });
   vm.runInContext(evaluationConfigSource, context);
 
   assert.equal(

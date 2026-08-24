@@ -67,6 +67,8 @@ public repositoryのPythonコード表示ページを開くと、URL、repositor
 
 GitHub内の画面遷移後も表示中のページを再判定します。
 
+通常の `npm run build` は本番固有の公開鍵と評価API URLを含めないため、採点・読解サポートAPIには接続しません。限定配布用の成果物は、Git管理対象外の環境設定を持つ配布担当者だけが `npm run validate:extension:production` で生成します。詳細は [`docs/evaluation-api-operations.md`](docs/evaluation-api-operations.md) を参照してください。
+
 ## 開発時の確認
 
 Node.js 24を使用します。依存関係をインストールしたあと、単体テストを含む品質チェックを実行してください。

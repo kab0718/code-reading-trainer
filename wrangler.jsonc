@@ -10,13 +10,12 @@
   },
   "vars": {
     "AI_MODEL": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
-    "ALLOWED_EXTENSION_IDS": "",
     "ALLOW_MISSING_ORIGIN": "false",
   },
   "ratelimits": [
     {
       "name": "RATE_LIMITER",
-      "namespace_id": "1001",
+      "namespace_id": "1002",
       "simple": {
         "limit": 10,
         "period": 60,

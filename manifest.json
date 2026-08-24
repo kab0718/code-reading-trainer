@@ -2,7 +2,10 @@
   "manifest_version": 3,
   "name": "Code Reading Trainer",
   "description": "GitHub上のコードを読み、自分の言葉で説明するトレーニングを支援します。",
-  "version": "0.1.0",
+  "version": "0.1.1",
+  "icons": {
+    "128": "assets/icons/code-reading-trainer-128.png"
+  },
   "permissions": ["sidePanel", "storage", "activeTab"],
   "host_permissions": ["https://github.com/*"],
   "optional_host_permissions": ["https://*.workers.dev/*"],

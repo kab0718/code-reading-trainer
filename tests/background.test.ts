@@ -112,12 +112,11 @@ function createBackgroundEnvironment({
   });
 
   vm.runInContext(configSource, context);
-  if (configuredUrl !== null) {
-    context.CodeReadingTrainerEvaluationConfig = Object.freeze({
-      getEvaluationApiUrl: () => configuredUrl,
-      getReadingSupportApiUrl: () => readingApiUrl,
-    });
-  }
+  context.CodeReadingTrainerEvaluationConfig = Object.freeze({
+    getEvaluationApiUrl: () => configuredUrl,
+    getReadingSupportApiUrl: () =>
+      configuredUrl === null ? null : readingApiUrl,
+  });
   vm.runInContext(contractSource, context);
   vm.runInContext(readingContractSource, context);
   vm.runInContext(backgroundSource, context);
@@ -301,7 +300,7 @@ test("契約に適合しない成功レスポンスを表示しない", async ()
   assert.equal(response.error.code, "INVALID_API_RESPONSE");
 });
 
-test("30秒で評価API通信を中断し、再試行可能なエラーを返す", async () => {
+test("36秒で評価API通信を中断し、再試行可能なエラーを返す", async () => {
   let timeoutDelay;
   const environment = createBackgroundEnvironment({
     configuredUrl: apiUrl,
@@ -319,14 +318,14 @@ test("30秒で評価API通信を中断し、再試行可能なエラーを返す
   });
 
   const response = await environment.send(evaluationMessage()).response;
-  assert.equal(timeoutDelay, 30_000);
+  assert.equal(timeoutDelay, 36_000);
   assert.equal(response.ok, false);
   assert.equal(response.error.code, "EVALUATION_TIMEOUT");
   assert.equal(response.error.retryable, true);
   assert.equal(environment.fetchCalls.length, 1);
 });
 
-test("レスポンス本文の読み取りも30秒で中断する", async () => {
+test("レスポンス本文の読み取りも36秒で中断する", async () => {
   let fireTimeout;
   const environment = createBackgroundEnvironment({
     configuredUrl: apiUrl,

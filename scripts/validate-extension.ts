@@ -1,6 +1,8 @@
+import { createHash } from "node:crypto";
 import { readFile, readdir, stat } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
+import vm from "node:vm";
 
 const projectRoot = path.join(process.cwd(), "dist/extension");
 const manifestPath = path.join(projectRoot, "manifest.json");
@@ -8,6 +10,10 @@ const allowedPermissions = new Set(["activeTab", "sidePanel", "storage"]);
 const allowedHostPermissions = new Set(["https://github.com/*"]);
 const allowedOptionalHostPermissions = new Set(["https://*.workers.dev/*"]);
 const allowedContentScriptMatches = new Set(["https://github.com/*"]);
+const production = process.argv.slice(2).includes("--production");
+const unknownArguments = process.argv
+  .slice(2)
+  .filter((argument) => argument !== "--production");
 
 interface ExtensionManifest {
   action?: {
@@ -23,6 +29,7 @@ interface ExtensionManifest {
   host_permissions?: string[];
   optional_host_permissions?: string[];
   icons?: Record<string, string>;
+  key?: string;
   manifest_version?: number;
   options_page?: string;
   options_ui?: { page?: string };
@@ -33,8 +40,111 @@ interface ExtensionManifest {
 
 const errors: string[] = [];
 
+if (unknownArguments.length > 0) {
+  errors.push(`unknown validation argument: ${unknownArguments.join(", ")}`);
+}
+
 function report(message: string): void {
   errors.push(message);
+}
+
+function deriveExtensionId(publicKey: string): string {
+  const digest = createHash("sha256")
+    .update(Buffer.from(publicKey, "base64"))
+    .digest()
+    .subarray(0, 16);
+
+  return [...digest]
+    .flatMap((byte) => [byte >> 4, byte & 0x0f])
+    .map((nibble) => String.fromCharCode("a".charCodeAt(0) + nibble))
+    .join("");
+}
+
+async function validateExtensionIdentity(
+  manifest: ExtensionManifest,
+): Promise<void> {
+  if (!production) {
+    if (manifest.key) {
+      report("development package must not contain a fixed extension key");
+    }
+    return;
+  }
+
+  if (!manifest.key || !/^[A-Za-z0-9+/]+={0,2}$/u.test(manifest.key)) {
+    report("production manifest key must be a Base64-encoded public key");
+    return;
+  }
+
+  const extensionId = deriveExtensionId(manifest.key);
+  const configuredIds = (process.env.ALLOWED_EXTENSION_IDS ?? "")
+    .split(",")
+    .map((id) => id.trim())
+    .filter(Boolean);
+
+  if (!configuredIds.includes(extensionId)) {
+    report(
+      `manifest key derives extension ID ${extensionId}, which is not present in ALLOWED_EXTENSION_IDS`,
+    );
+  }
+}
+
+async function validateEvaluationApiConfiguration(): Promise<void> {
+  const source = await readFile(
+    path.join(projectRoot, "src/evaluation-config.js"),
+    "utf8",
+  );
+  const context = vm.createContext({ Object, URL });
+  vm.runInContext(source, context);
+  const config = context.CodeReadingTrainerEvaluationConfig as
+    | {
+        getEvaluationApiPermissionOrigin(): string | null;
+        getEvaluationApiUrl(): string | null;
+        getReadingSupportApiUrl(): string | null;
+      }
+    | undefined;
+
+  if (!config) {
+    report("built evaluation configuration is missing");
+    return;
+  }
+
+  const expectedUrl = production
+    ? process.env.EVALUATION_API_URL?.trim()
+    : null;
+  if (config.getEvaluationApiUrl() !== expectedUrl) {
+    report("built evaluation API URL does not match the selected build mode");
+  }
+
+  if (production && expectedUrl) {
+    const expectedReadingSupportUrl = expectedUrl.replace(
+      /\/v1\/evaluations$/u,
+      "/v1/reading-support",
+    );
+    const expectedPermissionOrigin = `${new URL(expectedUrl).origin}/*`;
+    if (config.getReadingSupportApiUrl() !== expectedReadingSupportUrl) {
+      report("built reading support API URL does not match EVALUATION_API_URL");
+    }
+    if (
+      config.getEvaluationApiPermissionOrigin() !== expectedPermissionOrigin
+    ) {
+      report("built API permission origin does not match EVALUATION_API_URL");
+    }
+  } else if (
+    config.getReadingSupportApiUrl() !== null ||
+    config.getEvaluationApiPermissionOrigin() !== null
+  ) {
+    report("development package must not expose a production API origin");
+  }
+}
+
+async function validateRepositoryConfiguration(): Promise<void> {
+  const wranglerSource = await readFile(
+    path.join(process.cwd(), "wrangler.jsonc"),
+    "utf8",
+  );
+  if (/"ALLOWED_EXTENSION_IDS"\s*:/u.test(wranglerSource)) {
+    report("wrangler.jsonc must not contain production extension IDs");
+  }
 }
 
 async function readManifest(): Promise<ExtensionManifest | null> {
@@ -137,6 +247,7 @@ async function collectPackageFiles(directoryPath: string): Promise<string[]> {
 }
 
 const manifest = await readManifest();
+await validateRepositoryConfiguration();
 
 if (manifest) {
   if (manifest.manifest_version !== 3) {
@@ -146,6 +257,9 @@ if (manifest) {
   if (!/^\d+\.\d+\.\d+$/u.test(manifest.version ?? "")) {
     report("manifest version must use the x.y.z format");
   }
+
+  await validateExtensionIdentity(manifest);
+  await validateEvaluationApiConfiguration();
 
   for (const permission of manifest.permissions ?? []) {
     if (!allowedPermissions.has(permission)) {

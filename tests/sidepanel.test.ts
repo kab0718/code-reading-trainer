@@ -318,13 +318,11 @@ function createSidepanelEnvironment({
   vm.runInContext(evaluationContractSource, context);
   vm.runInContext(readingSupportContractSource, context);
   vm.runInContext(analyticsSource, context);
-  if (permissionOrigin !== null) {
-    context.CodeReadingTrainerEvaluationConfig = Object.freeze({
-      getEvaluationApiPermissionOrigin: () => permissionOrigin,
-      getEvaluationApiUrl: () => null,
-      getReadingSupportApiUrl: () => null,
-    });
-  }
+  context.CodeReadingTrainerEvaluationConfig = Object.freeze({
+    getEvaluationApiPermissionOrigin: () => permissionOrigin,
+    getEvaluationApiUrl: () => null,
+    getReadingSupportApiUrl: () => null,
+  });
   vm.runInContext(sidepanelSource, context);
 
   return {
