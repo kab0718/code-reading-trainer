@@ -15,12 +15,12 @@
       </p>
 
       <section id="training-methods">
-        <h2>トレーニング方法</h2>
+        <h2>おすすめ候補を探す</h2>
+        <p class="status">
+          表示中のPythonファイルから、学習に向いた関数・メソッドを提案します。
+        </p>
         <button type="button" id="recommendation-button">
           おすすめから選ぶ
-        </button>
-        <button type="button" id="selection-button">
-          選択したコードを読む
         </button>
       </section>
 
@@ -28,13 +28,10 @@
         <h2>おすすめ候補</h2>
         <p id="candidate-status" class="status"></p>
         <div id="candidate-list" class="candidate-list"></div>
-        <button type="button" id="candidate-free-training-button">
-          選択したコードを読む
-        </button>
       </section>
 
-      <form id="selection" hidden novalidate>
-        <h2>選択中のコード</h2>
+      <form id="training-session" hidden novalidate>
+        <h2>対象コード</h2>
         <pre><code id="selected-code"></code></pre>
         <fieldset id="mode-selector" class="mode-selector">
           <legend>目的を選ぶ</legend>
@@ -81,7 +78,7 @@
         <section id="reading-input" hidden>
           <p id="reading-input-error" class="input-error" role="alert"></p>
           <p class="privacy-note">
-            選択コードはAIへ送信しますが、履歴や計測イベントには保存しません。
+            対象コードはAIへ送信しますが、履歴や計測イベントには保存しません。
           </p>
           <button type="button" id="reading-submit-button" disabled>
             読むためのガイドを受け取る

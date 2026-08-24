@@ -14,7 +14,7 @@ const input = {
 
 const guide = {
   focusPoints: ["example と value の流れに注目します。"],
-  checks: ["value が文字列か選択範囲からは確認できません。"],
+  checks: ["value が文字列か候補コードからは確認できません。"],
   questions: ["value.strip() の戻り値はどこへ渡りますか？"],
   hints: ["return value.strip() を内側から追います。"],
   nextCandidates: [
@@ -49,7 +49,7 @@ test("ガイド生成ではURLをAIへ送らず専用Schemaとタグを使う", 
   assert.deepEqual(receivedOptions.tags, ["crt:reading:guide"]);
 });
 
-test("選択コードにない次候補が続く場合は安全なガイドへフォールバックする", async () => {
+test("対象コードにない次候補が続く場合は安全なガイドへフォールバックする", async () => {
   let calls = 0;
   const result = await supportReadingWithWorkersAI(input, {
     AI_MODEL: "test-model",
@@ -229,7 +229,7 @@ test("Unicode識別子を根拠として境界付きで照合する", async () =
   };
   const unicodeGuide = {
     focusPoints: ["正規化 と 値 の流れに注目します。"],
-    checks: ["値 の型は選択範囲からは確認できません。"],
+    checks: ["値 の型は候補コードからは確認できません。"],
     questions: ["値.strip() はどこへ渡りますか？"],
     hints: ["値.strip() を内側から追います。"],
     nextCandidates: [{ symbol: "strip", reason: "strip の定義を確認します。" }],
@@ -290,13 +290,13 @@ test("詳しい説明は通常テキストを検証して専用形式へ変換�
         generationResponseFormat = modelInput.response_format;
         return {
           response:
-            "example は value.strip() の結果を返します。型は選択範囲からは確認できません。",
+            "example は value.strip() の結果を返します。型は対象コードからは確認できません。",
         };
       },
     },
   });
   assert.ok("detailedExplanation" in result);
-  assert.match(result.detailedExplanation, /選択範囲からは確認できません/u);
+  assert.match(result.detailedExplanation, /対象コードからは確認できません/u);
   assert.equal(generationResponseFormat, undefined);
 });
 

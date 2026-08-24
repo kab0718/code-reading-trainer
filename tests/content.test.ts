@@ -49,7 +49,6 @@ function createContentEnvironment({
   let messageListener;
   let observerCallback;
   let currentEmbeddedData = embeddedData("main", "Lib/abc.py");
-  let currentSelection = "def example():\n    pass";
   const timers = [];
   const sentMessages = [];
 
@@ -99,9 +98,6 @@ function createContentEnvironment({
       location,
       addEventListener() {},
       clearTimeout() {},
-      getSelection() {
-        return { toString: () => currentSelection };
-      },
       setTimeout(callback) {
         timers.push(callback);
         return timers.length;
@@ -136,9 +132,6 @@ function createContentEnvironment({
       currentEmbeddedData = embeddedData(ref, filePath, commitOid);
       observerCallback();
     },
-    setSelection(value) {
-      currentSelection = value;
-    },
     runNextTimer() {
       const callback = timers.shift();
       assert.ok(callback, "実行待ちのタイマーがあること");
@@ -148,7 +141,7 @@ function createContentEnvironment({
   };
 }
 
-test("GET_PAGE_CONTEXTで対象ページと選択コードを返す", () => {
+test("GET_PAGE_CONTEXTで対象ページのコンテキストを返す", () => {
   const environment = createContentEnvironment();
 
   assert.deepEqual(normalize(environment.getContext()), {
@@ -159,7 +152,6 @@ test("GET_PAGE_CONTEXTで対象ページと選択コードを返す", () => {
     ref: "main",
     path: "Lib/abc.py",
     title: "abc.py at main · python/cpython",
-    selectedText: "def example():\n    pass",
   });
 });
 
@@ -211,15 +203,6 @@ test("未対応のapp-nameではページデータ取得不可として扱う", 
 
   assert.equal(environment.getContext().status, "unsupported");
   assert.equal(environment.getContext().reason, "page-data-unavailable");
-});
-
-test("選択コードのインデントと末尾改行を保ったまま返す", () => {
-  const environment = createContentEnvironment();
-  const selectedText = "    if ready:\n        run()\n";
-
-  environment.setSelection(selectedText);
-
-  assert.equal(environment.getContext().selectedText, selectedText);
 });
 
 test("表示中blobのcommit OIDをページ情報へ含める", () => {

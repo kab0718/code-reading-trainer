@@ -15,12 +15,12 @@ function loadValidation() {
   return context.CodeReadingTrainerInputValidation;
 }
 
-test("選択コードと回答の必須入力を検証する", () => {
+test("対象コードと回答の必須入力を検証する", () => {
   const { validateTrainingInput } = loadValidation();
 
   const missingCode = validateTrainingInput(" \n", "説明");
   assert.equal(missingCode.valid, false);
-  assert.match(missingCode.codeError, /Pythonコードを選択/u);
+  assert.match(missingCode.codeError, /対象のPythonコードがありません/u);
 
   const missingExplanation = validateTrainingInput("print('ok')", " \n");
   assert.equal(missingExplanation.valid, false);
@@ -43,7 +43,7 @@ test("コード30,000文字と回答5,000文字の上限を検証する", () => 
 
   assert.equal(withinLimits.valid, true);
   assert.equal(overLimits.valid, false);
-  assert.match(overLimits.codeError, /選択範囲を短く/u);
+  assert.match(overLimits.codeError, /別の候補/u);
   assert.match(overLimits.explanationError, /内容を短く/u);
 });
 
@@ -53,15 +53,15 @@ test("文字数はUnicodeコードポイント単位で数える", () => {
   assert.equal(countCharacters("A😀あ"), 3);
 });
 
-test("読解サポートは選択コードだけを検証する", () => {
+test("読解サポートは対象コードだけを検証する", () => {
   const { INPUT_LIMITS, validateReadingSupportInput } = loadValidation();
   assert.equal(validateReadingSupportInput("return value").valid, true);
   assert.match(
     validateReadingSupportInput(" ").codeError,
-    /Pythonコードを選択/u,
+    /対象のPythonコードがありません/u,
   );
   assert.match(
     validateReadingSupportInput("あ".repeat(INPUT_LIMITS.code + 1)).codeError,
-    /選択範囲を短く/u,
+    /別の候補/u,
   );
 });

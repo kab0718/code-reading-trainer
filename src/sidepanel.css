@@ -93,11 +93,6 @@ button:disabled {
   font-weight: 650;
 }
 
-#candidate-free-training-button {
-  color: #315a40;
-  background: transparent;
-}
-
 pre {
   max-height: 220px;
   overflow: auto;

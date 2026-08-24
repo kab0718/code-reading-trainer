@@ -42,10 +42,6 @@
     return {
       ...page,
       title: document.title,
-      selectedText:
-        page.status === PAGE_STATUS.ELIGIBLE
-          ? (window.getSelection()?.toString() ?? "")
-          : "",
     };
   }
 

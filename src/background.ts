@@ -292,19 +292,19 @@ import { requestTrainingCandidates } from "./python-candidates.js";
       if (controller.signal.aborted) {
         return createError(
           "READING_SUPPORT_TIMEOUT",
-          "読解サポートがタイムアウトしました。選択コードは保持されています。",
+          "読解サポートがタイムアウトしました。対象コードは保持されています。",
           true,
         );
       }
       return receivedResponse
         ? createError(
             "INVALID_API_RESPONSE",
-            "読解サポートAPIから不正な応答を受信しました。選択コードは保持されています。",
+            "読解サポートAPIから不正な応答を受信しました。対象コードは保持されています。",
             true,
           )
         : createError(
             "NETWORK_ERROR",
-            "読解サポートAPIに接続できませんでした。選択コードは保持されています。",
+            "読解サポートAPIに接続できませんでした。対象コードは保持されています。",
             true,
           );
     } finally {
@@ -326,7 +326,7 @@ import { requestTrainingCandidates } from "./python-candidates.js";
     }
     return createError(
       "INVALID_API_RESPONSE",
-      "読解サポートAPIから不正な応答を受信しました。選択コードは保持されています。",
+      "読解サポートAPIから不正な応答を受信しました。対象コードは保持されています。",
       true,
     );
   }

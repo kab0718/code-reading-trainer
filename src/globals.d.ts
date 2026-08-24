@@ -34,7 +34,6 @@ interface UnsupportedPageContext extends PageDetails {
 type AnalyzedPageContext = EligiblePageContext | UnsupportedPageContext;
 
 type PageContext = AnalyzedPageContext & {
-  selectedText?: string;
   tabId?: number;
   title?: string;
 };
