@@ -19,9 +19,9 @@
     let questionError = null;
 
     if (!code.trim()) {
-      codeError = "GitHub上で読み解きたいPythonコードを選択してください。";
+      codeError = "読み解く対象のPythonコードがありません。";
     } else if (codeCharacterCount > INPUT_LIMITS.code) {
-      codeError = `選択コードは${INPUT_LIMITS.code.toLocaleString("ja-JP")}文字以内にしてください（現在${codeCharacterCount.toLocaleString("ja-JP")}文字）。選択範囲を短くして、もう一度取り込んでください。`;
+      codeError = `対象コードは${INPUT_LIMITS.code.toLocaleString("ja-JP")}文字以内にしてください（現在${codeCharacterCount.toLocaleString("ja-JP")}文字）。別の候補を選んでください。`;
     }
     if (!question.trim()) {
       questionError =
@@ -49,9 +49,9 @@
     let explanationError = null;
 
     if (!code.trim()) {
-      codeError = "GitHub上で説明したいPythonコードを選択してください。";
+      codeError = "説明する対象のPythonコードがありません。";
     } else if (codeCharacterCount > INPUT_LIMITS.code) {
-      codeError = `選択コードは${INPUT_LIMITS.code.toLocaleString("ja-JP")}文字以内にしてください（現在${codeCharacterCount.toLocaleString("ja-JP")}文字）。選択範囲を短くして、もう一度取り込んでください。`;
+      codeError = `対象コードは${INPUT_LIMITS.code.toLocaleString("ja-JP")}文字以内にしてください（現在${codeCharacterCount.toLocaleString("ja-JP")}文字）。別の候補を選んでください。`;
     }
 
     if (!explanation.trim()) {

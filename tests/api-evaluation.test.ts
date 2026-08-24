@@ -36,7 +36,7 @@ function createModelEvaluation(
           applicable: false,
           percentageScore: 0,
           feedback: null,
-          exclusionReason: "選択コードに該当する処理がありません。",
+          exclusionReason: "対象コードに該当する処理がありません。",
         };
       }
 

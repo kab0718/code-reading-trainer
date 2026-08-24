@@ -42,7 +42,6 @@ function eligibleContext(filePath) {
     repository: "example/project",
     ref: "main",
     path: filePath,
-    selectedText: "",
   };
 }
 
@@ -180,9 +179,6 @@ function createSidepanelEnvironment({
     "#training-methods": createElement("#training-methods", {
       hidden: false,
     }),
-    "#selection-button": createElement("#selection-button", {
-      disabled: false,
-    }),
     "#recommendation-button": createElement("#recommendation-button", {
       disabled: false,
     }),
@@ -193,11 +189,7 @@ function createSidepanelEnvironment({
       textContent: "",
     }),
     "#candidate-list": createElement("#candidate-list", { children: [] }),
-    "#candidate-free-training-button": createElement(
-      "#candidate-free-training-button",
-      {},
-    ),
-    "#selection": createElement("#selection", { hidden: true }),
+    "#training-session": createElement("#training-session", { hidden: true }),
     "#selected-code": createElement("#selected-code", { textContent: "" }),
     "#training-input": createElement("#training-input", { hidden: false }),
     "#reading-input": createElement("#reading-input", { hidden: true }),
@@ -290,12 +282,12 @@ function createSidepanelEnvironment({
       },
       runtime: {
         async sendMessage(message) {
+          if (message.type === "REQUEST_TRAINING_CANDIDATES") {
+            return candidatesHandler(message);
+          }
           evaluationMessages.push(message);
           if (message.type === "REQUEST_READING_SUPPORT") {
             return readingHandler(message);
-          }
-          if (message.type === "REQUEST_TRAINING_CANDIDATES") {
-            return candidatesHandler(message);
           }
           return evaluationHandler();
         },
@@ -356,9 +348,33 @@ function createSidepanelEnvironment({
 
   return {
     elements,
-    async select(selectedText) {
-      currentContext = { ...currentContext, selectedText };
-      await listeners.get("#selection-button:click")();
+    async startWithCandidate(code) {
+      candidatesHandler = async (message) => ({
+        candidates: [
+          {
+            code,
+            difficulty: "初級",
+            endLine: 1,
+            estimatedMinutes: 5,
+            id: "function:example:1",
+            kind: "function",
+            level: "recommended",
+            name: "example",
+            reason: "テスト用の候補です。",
+            sourceUrl: `https://github.com/${message.context.repository}/blob/${message.context.commitOid}/${message.context.path}`,
+            startLine: 1,
+          },
+        ],
+        contextKey: JSON.stringify([
+          message.context.repository,
+          message.context.commitOid,
+          message.context.path,
+        ]),
+        ok: true,
+        requestId: message.requestId,
+      });
+      await listeners.get("#recommendation-button:click")();
+      listeners.get("<button>:click")();
     },
     inputExplanation(value) {
       elements["#explanation"].value = value;
@@ -372,9 +388,6 @@ function createSidepanelEnvironment({
     },
     chooseRenderedCandidate() {
       return listeners.get("<button>:click")();
-    },
-    chooseFreeTraining() {
-      return listeners.get("#candidate-free-training-button:click")();
     },
     chooseTrainingMode() {
       return listeners.get("#training-mode-button:click")();
@@ -394,7 +407,7 @@ function createSidepanelEnvironment({
     },
     submit() {
       let defaultPrevented = false;
-      const completion = listeners.get("#selection:submit")({
+      const completion = listeners.get("#training-session:submit")({
         preventDefault() {
           defaultPrevented = true;
         },
@@ -459,15 +472,22 @@ test("回答フォームで1回限りのルールを明示する", () => {
   assert.match(sidepanelHtmlSource, /再評価したりすることはできません/u);
 });
 
+test("初期画面にGitHub上のテキスト選択導線を表示しない", () => {
+  assert.doesNotMatch(sidepanelHtmlSource, /selection-button/u);
+  assert.doesNotMatch(sidepanelHtmlSource, /対象コードを読む/u);
+});
+
 test("おすすめ候補を選ぶとimmutable URLで既存の採点フローへ渡す", async () => {
   const environment = createSidepanelEnvironment();
   await flushPromises();
   const commitOid = "a".repeat(40);
   const sourceUrl = `https://github.com/example/project/blob/${commitOid}/first.py`;
+  const candidateCode =
+    "def normalize(value):\n    result = str(value)\n    return result";
   environment.setCandidatesHandler(async (message) => ({
     candidates: [
       {
-        code: "def normalize(value):\n    result = str(value)\n    return result",
+        code: candidateCode,
         difficulty: "初級",
         endLine: 3,
         estimatedMinutes: 5,
@@ -502,11 +522,11 @@ test("おすすめ候補を選ぶとimmutable URLで既存の採点フローへ�
     (message) => message.type === "EVALUATE_ANSWER",
   );
   assert.equal(evaluationMessage.request.sourceUrl, sourceUrl);
-  assert.match(evaluationMessage.request.code, /def normalize/u);
+  assert.equal(evaluationMessage.request.code, candidateCode);
   assert.equal(environment.elements["#total-score-value"].textContent, "82");
 });
 
-test("候補なしでも自由トレーニングへ案内して操作を続けられる", async () => {
+test("候補がない場合は別のPythonファイルで再試行できると案内する", async () => {
   const environment = createSidepanelEnvironment();
   await flushPromises();
 
@@ -516,10 +536,15 @@ test("候補なしでも自由トレーニングへ案内して操作を続け�
     environment.elements["#candidate-status"].textContent,
     /候補が見つかりません/u,
   );
-  environment.chooseFreeTraining();
-  assert.equal(environment.elements["#candidate-section"].hidden, true);
-  assert.match(environment.elements["#status"].textContent, /コードを選択/u);
-  assert.equal(environment.elements["#selection-button"].disabled, false);
+  assert.match(
+    environment.elements["#candidate-status"].textContent,
+    /別のpublic Pythonファイル/u,
+  );
+  assert.doesNotMatch(
+    environment.elements["#candidate-status"].textContent,
+    /トレーニング|コードを選択/u,
+  );
+  assert.equal(environment.elements["#candidate-section"].hidden, false);
 });
 
 test("ページ遷移を検知した時点で古い候補レスポンスを破棄する", async () => {
@@ -576,10 +601,10 @@ test("採点結果から新しいトレーニングを開始できる", () => {
   assert.match(sidepanelHtmlSource, /新しいトレーニングを始める/u);
 });
 
-test("選択コードでトレーニングと読解サポートを切り替え、入力を分離する", async () => {
+test("候補コードでトレーニングと読解サポートを切り替え、入力を分離する", async () => {
   const environment = createSidepanelEnvironment();
   await flushPromises();
-  await environment.select("return value");
+  await environment.startWithCandidate("return value");
   environment.inputExplanation("値を返します。");
 
   environment.chooseReadingMode();
@@ -600,7 +625,7 @@ test("選択コードでトレーニングと読解サポートを切り替え�
 test("最初は着眼点・確認事項・質問・ヒントを表示し詳しい説明は隠す", async () => {
   const environment = createSidepanelEnvironment();
   await flushPromises();
-  await environment.select("return value");
+  await environment.startWithCandidate("return value");
   environment.chooseReadingMode();
   environment.inputReadingQuestion("value の流れを理解したい");
   environment.requestReadingGuide();
@@ -611,8 +636,9 @@ test("最初は着眼点・確認事項・質問・ヒントを表示し詳し�
     environment.evaluationMessages[0].type,
     "REQUEST_READING_SUPPORT",
   );
+  assert.equal(environment.evaluationMessages[0].request.code, "return value");
   assert.equal(environment.evaluationMessages[0].request.stage, "guide");
-  assert.equal(environment.elements["#selection"].hidden, true);
+  assert.equal(environment.elements["#training-session"].hidden, true);
   assert.equal(environment.elements["#reading-result"].hidden, false);
   assert.match(
     elementText(environment.elements["#focus-points-list"]),
@@ -633,7 +659,7 @@ test("最初は着眼点・確認事項・質問・ヒントを表示し詳し�
 test("明示操作後だけ詳しい説明を追加取得して表示する", async () => {
   const environment = createSidepanelEnvironment();
   await flushPromises();
-  await environment.select("return value");
+  await environment.startWithCandidate("return value");
   environment.chooseReadingMode();
   environment.inputReadingQuestion("value の流れを理解したい");
   environment.requestReadingGuide();
@@ -660,7 +686,7 @@ test("明示操作後だけ詳しい説明を追加取得して表示する", as
 test("読解サポートのAPIエラーでも質問を保持して再試行できる", async () => {
   const environment = createSidepanelEnvironment();
   await flushPromises();
-  await environment.select("return value");
+  await environment.startWithCandidate("return value");
   environment.chooseReadingMode();
   const question = "value の流れを理解したい";
   environment.inputReadingQuestion(question);
@@ -698,7 +724,7 @@ test("読解サポートのAPIエラーでも質問を保持して再試行で�
 test("読解エラーはモード切替と同一ページ更新後も理由を表示する", async () => {
   const environment = createSidepanelEnvironment();
   await flushPromises();
-  await environment.select("return value");
+  await environment.startWithCandidate("return value");
   environment.chooseReadingMode();
   environment.inputReadingQuestion("value を確認したい");
   environment.setReadingHandler(async () => ({
@@ -726,7 +752,7 @@ test("読解エラーはモード切替と同一ページ更新後も理由を�
 test("詳しい説明の回数制限中は期限まで再試行ボタンを無効にする", async () => {
   const environment = createSidepanelEnvironment();
   await flushPromises();
-  await environment.select("return value");
+  await environment.startWithCandidate("return value");
   environment.chooseReadingMode();
   environment.inputReadingQuestion("value を確認したい");
   environment.requestReadingGuide();
@@ -757,7 +783,7 @@ test("詳しい説明の回数制限中は期限まで再試行ボタンを無�
 test("ページ遷移後に届いた読解の回数制限も新しい入力を期限まで止める", async () => {
   const environment = createSidepanelEnvironment();
   await flushPromises();
-  await environment.select("return old_value");
+  await environment.startWithCandidate("return old_value");
   environment.chooseReadingMode();
   environment.inputReadingQuestion("old_value を確認したい");
   let finishReading;
@@ -772,7 +798,7 @@ test("ページ遷移後に届いた読解の回数制限も新しい入力を�
 
   environment.navigate(eligibleContext("second.py"));
   await flushPromises();
-  await environment.select("return new_value");
+  await environment.startWithCandidate("return new_value");
   environment.chooseReadingMode();
   environment.inputReadingQuestion("new_value を確認したい");
   assert.equal(environment.elements["#reading-submit-button"].disabled, false);
@@ -798,7 +824,7 @@ test("読解サポートの計測イベントにコード・質問本文を保�
   await flushPromises();
   const code = "return sensitive_code";
   const question = "sensitive_question を確認したい";
-  await environment.select(code);
+  await environment.startWithCandidate(code);
   environment.chooseReadingMode();
   environment.inputReadingQuestion(question);
   environment.requestReadingGuide();
@@ -822,29 +848,45 @@ test("読解サポートの計測イベントにコード・質問本文を保�
   ]);
 });
 
-test("Pythonファイル間の遷移で前の選択コードと回答を消す", async () => {
+test("Pythonファイル間の遷移で前の対象コードと回答を消す", async () => {
   const environment = createSidepanelEnvironment();
   await flushPromises();
 
-  environment.elements["#selection"].hidden = false;
+  environment.elements["#training-session"].hidden = false;
   environment.elements["#selected-code"].textContent = "old code";
   environment.elements["#explanation"].value = "old answer";
 
   environment.navigate(eligibleContext("second.py"));
   await flushPromises();
 
-  assert.equal(environment.elements["#selection"].hidden, true);
+  assert.equal(environment.elements["#training-session"].hidden, true);
   assert.equal(environment.elements["#selected-code"].textContent, "");
   assert.equal(environment.elements["#explanation"].value, "");
   assert.match(environment.elements["#status"].textContent, /second\.py/u);
 });
 
-test("選択コードと回答が揃った場合だけ評価操作を有効にする", async () => {
+test("対象外ページへの遷移ではおすすめ候補の操作を無効にする", async () => {
   const environment = createSidepanelEnvironment();
   await flushPromises();
 
-  await environment.select("def example():\n    return 1");
-  assert.equal(environment.elements["#selection"].hidden, false);
+  environment.navigate({
+    ...eligibleContext("README.md"),
+    path: null,
+    reason: "not-python",
+    status: "unsupported",
+  });
+  await flushPromises();
+
+  assert.equal(environment.elements["#recommendation-button"].disabled, true);
+  assert.match(environment.elements["#status"].textContent, /Python/u);
+});
+
+test("候補コードと回答が揃った場合だけ評価操作を有効にする", async () => {
+  const environment = createSidepanelEnvironment();
+  await flushPromises();
+
+  await environment.startWithCandidate("def example():\n    return 1");
+  assert.equal(environment.elements["#training-session"].hidden, false);
   assert.equal(environment.elements["#evaluation-button"].disabled, true);
   assert.match(environment.elements["#input-error"].textContent, /回答を入力/u);
 
@@ -858,21 +900,11 @@ test("選択コードと回答が揃った場合だけ評価操作を有効に�
   assert.match(environment.elements["#status"].textContent, /採点が完了/u);
 });
 
-test("未選択と入力上限超過では修正方法を示して評価できない", async () => {
+test("回答の入力上限超過では修正方法を示して評価できない", async () => {
   const environment = createSidepanelEnvironment();
   await flushPromises();
 
-  await environment.select("   ");
-  assert.equal(environment.elements["#selection"].hidden, true);
-  assert.equal(environment.elements["#evaluation-button"].disabled, true);
-  assert.match(environment.elements["#status"].textContent, /コードを選択/u);
-
-  await environment.select("x".repeat(30_001));
-  assert.equal(environment.elements["#selection"].hidden, true);
-  assert.equal(environment.elements["#evaluation-button"].disabled, true);
-  assert.match(environment.elements["#status"].textContent, /選択範囲を短く/u);
-
-  await environment.select("print('ok')");
+  await environment.startWithCandidate("print('ok')");
   environment.inputExplanation("あ".repeat(5_001));
   assert.equal(environment.elements["#evaluation-button"].disabled, true);
   assert.equal(environment.elements["#explanation"]["aria-invalid"], "true");
@@ -885,7 +917,7 @@ test("外部入力をHTMLではなくテキストとして表示する", async (
   const code = '<img src=x onerror="alert(1)">';
   const explanation = '<script>alert("xss")</script>';
 
-  await environment.select(code);
+  await environment.startWithCandidate(code);
   environment.inputExplanation(explanation);
 
   assert.equal(environment.elements["#selected-code"].textContent, code);
@@ -896,7 +928,7 @@ test("外部入力をHTMLではなくテキストとして表示する", async (
 test("採点結果を表示し、対象外の評価軸を除外する", async () => {
   const environment = createSidepanelEnvironment();
   await flushPromises();
-  await environment.select("def example():\n    return 1");
+  await environment.startWithCandidate("def example():\n    return 1");
   environment.inputExplanation("値1を返す関数です。");
 
   const response = evaluationResponse(100);
@@ -950,7 +982,7 @@ test("模範解答は採点成功後だけ自分の回答と並べて表示す�
   assert.equal(environment.elements["#evaluation-result"].hidden, true);
   assert.equal(environment.elements["#model-answer"].textContent, "");
 
-  await environment.select("return value");
+  await environment.startWithCandidate("return value");
   environment.inputExplanation(userAnswer);
   const response = evaluationResponse();
   response.modelAnswer = modelAnswer;
@@ -958,7 +990,7 @@ test("模範解答は採点成功後だけ自分の回答と並べて表示す�
 
   await environment.submit().completion;
 
-  assert.equal(environment.elements["#selection"].hidden, true);
+  assert.equal(environment.elements["#training-session"].hidden, true);
   assert.equal(environment.elements["#training-methods"].hidden, true);
   assert.equal(environment.elements["#evaluation-result"].hidden, false);
   assert.equal(environment.elements["#user-answer"].textContent, userAnswer);
@@ -968,7 +1000,7 @@ test("模範解答は採点成功後だけ自分の回答と並べて表示す�
 test("不正な採点結果を表示せず回答を保持して再試行できる", async () => {
   const environment = createSidepanelEnvironment();
   await flushPromises();
-  await environment.select("return value");
+  await environment.startWithCandidate("return value");
   const answer = "値を返します。";
   environment.inputExplanation(answer);
   const invalidResponse = evaluationResponse();
@@ -993,7 +1025,7 @@ test("不正な採点結果を表示せず回答を保持して再試行でき�
 test("採点中は入力と送信を固定して二重送信を防ぐ", async () => {
   const environment = createSidepanelEnvironment();
   await flushPromises();
-  await environment.select("def example():\n    return 1");
+  await environment.startWithCandidate("def example():\n    return 1");
   environment.inputExplanation("値1を返す関数です。");
 
   let finishEvaluation;
@@ -1022,7 +1054,7 @@ test("採点中は入力と送信を固定して二重送信を防ぐ", async ()
 test("APIエラー時は回答を保持し、手動で再送信できる", async () => {
   const environment = createSidepanelEnvironment();
   await flushPromises();
-  await environment.select("print('hello')");
+  await environment.startWithCandidate("print('hello')");
   const answer = "helloと表示します。";
   environment.inputExplanation(answer);
   environment.setEvaluationHandler(async () => ({
@@ -1044,7 +1076,6 @@ test("APIエラー時は回答を保持し、手動で再送信できる", async
 
   assert.equal(environment.elements["#explanation"].value, answer);
   assert.equal(environment.elements["#explanation"].readOnly, false);
-  assert.equal(environment.elements["#selection-button"].disabled, false);
   assert.equal(environment.elements["#training-methods"].hidden, false);
   assert.equal(environment.elements["#explanation"]["aria-invalid"], "true");
   assert.match(
@@ -1065,7 +1096,7 @@ test("APIエラー時は回答を保持し、手動で再送信できる", async
 test("回数制限の待機中は回答を編集しても期限まで再送信できない", async () => {
   const environment = createSidepanelEnvironment();
   await flushPromises();
-  await environment.select("print('hello')");
+  await environment.startWithCandidate("print('hello')");
   environment.inputExplanation("helloと表示します。");
   environment.setEvaluationHandler(async () => ({
     ok: false,
@@ -1092,7 +1123,7 @@ test("回数制限の待機中は回答を編集しても期限まで再送信�
 test("回数制限の待機はコードを再選択しても解除されない", async () => {
   const environment = createSidepanelEnvironment();
   await flushPromises();
-  await environment.select("print('first')");
+  await environment.startWithCandidate("print('first')");
   environment.inputExplanation("firstと表示します。");
   environment.setEvaluationHandler(async () => ({
     ok: false,
@@ -1106,7 +1137,7 @@ test("回数制限の待機はコードを再選択しても解除されない",
   }));
   await environment.submit().completion;
 
-  await environment.select("print('second')");
+  await environment.startWithCandidate("print('second')");
   environment.inputExplanation("secondと表示します。");
   assert.equal(environment.elements["#evaluation-button"].disabled, true);
   assert.equal(environment.evaluationMessages.length, 1);
@@ -1120,7 +1151,7 @@ test("設定済み評価APIの正確なOriginを許可した後だけ送信す�
     "https://code-reading-trainer-evaluation-api.account.workers.dev/*";
   const environment = createSidepanelEnvironment({ permissionOrigin });
   await flushPromises();
-  await environment.select("return value");
+  await environment.startWithCandidate("return value");
   environment.inputExplanation("値を返します。");
 
   await environment.submit().completion;
@@ -1139,7 +1170,7 @@ test("評価APIへの接続許可を拒否しても回答を保持し再試行�
       "https://code-reading-trainer-evaluation-api.account.workers.dev/*",
   });
   await flushPromises();
-  await environment.select("return value");
+  await environment.startWithCandidate("return value");
   environment.inputExplanation(answer);
 
   await environment.submit().completion;
@@ -1153,7 +1184,7 @@ test("評価APIへの接続許可を拒否しても回答を保持し再試行�
 test("採点成功後は回答を固定して同じ回答を再送信できない", async () => {
   const environment = createSidepanelEnvironment();
   await flushPromises();
-  await environment.select("return value");
+  await environment.startWithCandidate("return value");
   environment.inputExplanation("値を返します。");
 
   await environment.submit().completion;
@@ -1161,7 +1192,7 @@ test("採点成功後は回答を固定して同じ回答を再送信できな�
   await secondSubmission.completion;
 
   assert.equal(environment.evaluationMessages.length, 1);
-  assert.equal(environment.elements["#selection"].hidden, true);
+  assert.equal(environment.elements["#training-session"].hidden, true);
   assert.equal(environment.elements["#explanation"].readOnly, true);
   assert.equal(environment.elements["#evaluation-button"].disabled, true);
   assert.equal(
@@ -1174,7 +1205,7 @@ test("採点成功後は回答を固定して同じ回答を再送信できな�
 test("新しいトレーニングでは前のセッションを一度だけ消してページ情報を再取得する", async () => {
   const environment = createSidepanelEnvironment();
   await flushPromises();
-  await environment.select("return first_value");
+  await environment.startWithCandidate("return first_value");
   environment.inputExplanation("最初の値を返します。");
   const firstResponse = evaluationResponse();
   firstResponse.strengths = ["戻り値を説明できています。"];
@@ -1207,7 +1238,7 @@ test("新しいトレーニングでは前のセッションを一度だけ消�
     );
   }
   assert.equal(environment.elements["#training-methods"].hidden, false);
-  assert.equal(environment.elements["#selection"].hidden, true);
+  assert.equal(environment.elements["#training-session"].hidden, true);
   assert.equal(environment.elements["#evaluation-result"].hidden, true);
   assert.equal(environment.elements["#selected-code"].textContent, "");
   assert.equal(environment.elements["#explanation"].value, "");
@@ -1218,13 +1249,12 @@ test("新しいトレーニングでは前のセッションを一度だけ消�
   assert.equal(environment.elements["#gaps-list"].children.length, 0);
   assert.equal(environment.elements["#user-answer"].textContent, "");
   assert.equal(environment.elements["#model-answer"].textContent, "");
-  assert.equal(environment.elements["#selection-button"].disabled, false);
   assert.match(environment.elements["#status"].textContent, /first\.py/u);
 
   await environment.submit().completion;
   assert.equal(environment.evaluationMessages.length, 1);
 
-  await environment.select("return second_value");
+  await environment.startWithCandidate("return second_value");
   environment.inputExplanation("次の値を返します。");
   environment.setEvaluationHandler(async () => ({
     ok: true,
@@ -1246,7 +1276,7 @@ test("新しいトレーニングでは前のセッションを一度だけ消�
 test("新しいトレーニングのページ再取得に失敗しても前の結果を残さない", async () => {
   const environment = createSidepanelEnvironment();
   await flushPromises();
-  await environment.select("return value");
+  await environment.startWithCandidate("return value");
   environment.inputExplanation("値を返します。");
   const response = evaluationResponse();
   response.modelAnswer = "前の模範解答です。";
@@ -1262,14 +1292,14 @@ test("新しいトレーニングのページ再取得に失敗しても前の�
   assert.equal(environment.elements["#selected-code"].textContent, "");
   assert.equal(environment.elements["#explanation"].value, "");
   assert.equal(environment.elements["#model-answer"].textContent, "");
-  assert.equal(environment.elements["#selection-button"].disabled, true);
+  assert.equal(environment.elements["#recommendation-button"].disabled, true);
   assert.match(environment.elements["#status"].textContent, /取得できません/u);
 });
 
 test("新しいトレーニングの再取得先が対象外なら選択を無効にして案内する", async () => {
   const environment = createSidepanelEnvironment();
   await flushPromises();
-  await environment.select("return value");
+  await environment.startWithCandidate("return value");
   environment.inputExplanation("値を返します。");
   await environment.submit().completion;
   environment.setPageContextHandler(async () => ({
@@ -1283,14 +1313,14 @@ test("新しいトレーニングの再取得先が対象外なら選択を無�
 
   assert.equal(environment.elements["#evaluation-result"].hidden, true);
   assert.equal(environment.elements["#model-answer"].textContent, "");
-  assert.equal(environment.elements["#selection-button"].disabled, true);
+  assert.equal(environment.elements["#recommendation-button"].disabled, true);
   assert.match(environment.elements["#status"].textContent, /Python/u);
 });
 
 test("採点中にページが変わった場合は古い結果で新しい画面を更新しない", async () => {
   const environment = createSidepanelEnvironment();
   await flushPromises();
-  await environment.select("return old_value");
+  await environment.startWithCandidate("return old_value");
   environment.inputExplanation("古い値を返します。");
 
   let finishEvaluation;
@@ -1307,10 +1337,9 @@ test("採点中にページが変わった場合は古い結果で新しい画�
   finishEvaluation({ ok: true, response: evaluationResponse(99) });
   await submission.completion;
 
-  assert.equal(environment.elements["#selection"].hidden, true);
+  assert.equal(environment.elements["#training-session"].hidden, true);
   assert.equal(environment.elements["#explanation"].value, "");
   assert.equal(environment.elements["#explanation"].readOnly, false);
-  assert.equal(environment.elements["#selection-button"].disabled, false);
   assert.match(environment.elements["#status"].textContent, /second\.py/u);
   assert.doesNotMatch(environment.elements["#status"].textContent, /99/u);
 });
@@ -1318,7 +1347,7 @@ test("採点中にページが変わった場合は古い結果で新しい画�
 test("ページ遷移後に届いた回数制限も新しい回答の送信を期限まで止める", async () => {
   const environment = createSidepanelEnvironment();
   await flushPromises();
-  await environment.select("return old_value");
+  await environment.startWithCandidate("return old_value");
   environment.inputExplanation("古い値を返します。");
 
   let finishEvaluation;
@@ -1331,7 +1360,7 @@ test("ページ遷移後に届いた回数制限も新しい回答の送信を�
   const submission = environment.submit();
   environment.navigate(eligibleContext("second.py"));
   await flushPromises();
-  await environment.select("return new_value");
+  await environment.startWithCandidate("return new_value");
   environment.inputExplanation("新しい値を返します。");
   assert.equal(environment.elements["#evaluation-button"].disabled, false);
 
@@ -1358,16 +1387,14 @@ test("ページ遷移後に届いた回数制限も新しい回答の送信を�
 test("採点完了後に別ファイルへ移動すると新しい選択を開始できる", async () => {
   const environment = createSidepanelEnvironment();
   await flushPromises();
-  await environment.select("return first");
+  await environment.startWithCandidate("return first");
   environment.inputExplanation("最初の値を返します。");
   await environment.submit().completion;
 
-  assert.equal(environment.elements["#selection-button"].disabled, true);
   environment.navigate(eligibleContext("second.py"));
   await flushPromises();
 
-  assert.equal(environment.elements["#selection-button"].disabled, false);
-  assert.equal(environment.elements["#selection"].hidden, true);
+  assert.equal(environment.elements["#training-session"].hidden, true);
   assert.equal(environment.elements["#evaluation-result"].hidden, true);
   assert.equal(environment.elements["#model-answer"].textContent, "");
   assert.match(environment.elements["#status"].textContent, /second\.py/u);
@@ -1376,14 +1403,13 @@ test("採点完了後に別ファイルへ移動すると新しい選択を開�
 test("採点完了後のタブ切り替えでは移動先に合わせて前の結果を消す", async () => {
   const environment = createSidepanelEnvironment();
   await flushPromises();
-  await environment.select("return first");
+  await environment.startWithCandidate("return first");
   environment.inputExplanation("最初の値を返します。");
   await environment.submit().completion;
 
   environment.activateTab(eligibleContext("second.py"));
   await flushPromises();
 
-  assert.equal(environment.elements["#selection-button"].disabled, false);
   assert.equal(environment.elements["#evaluation-result"].hidden, true);
   assert.equal(environment.elements["#explanation"].value, "");
   assert.equal(environment.elements["#model-answer"].textContent, "");
@@ -1393,7 +1419,7 @@ test("採点完了後のタブ切り替えでは移動先に合わせて前の�
 test("同じページの再確認で採点中・完了状態の表示を上書きしない", async () => {
   const environment = createSidepanelEnvironment();
   await flushPromises();
-  await environment.select("return value");
+  await environment.startWithCandidate("return value");
   environment.inputExplanation("値を返します。");
 
   let finishEvaluation;
@@ -1438,7 +1464,7 @@ test("古いページ情報の応答が後着しても新しいページ状態�
   assert.doesNotMatch(environment.elements["#status"].textContent, /old\.py/u);
 });
 
-test("古い選択要求の失敗が新しいページ状態を上書きしない", async () => {
+test("古い候補要求の失敗が新しいページ状態を上書きしない", async () => {
   const environment = createSidepanelEnvironment();
   await flushPromises();
   let rejectOldRequest;
@@ -1453,11 +1479,11 @@ test("古い選択要求の失敗が新しいページ状態を上書きしな�
     return Promise.resolve(eligibleContext("new.py"));
   });
 
-  const oldSelection = environment.select("old code");
+  const oldCandidateRequest = environment.requestCandidates();
   environment.notifyPageContextChanged();
   await flushPromises();
   rejectOldRequest(new Error("old request failed"));
-  await oldSelection;
+  await oldCandidateRequest;
 
   assert.match(environment.elements["#status"].textContent, /new\.py/u);
   assert.doesNotMatch(

@@ -39,7 +39,7 @@ const input = {
 };
 const guide = {
   focusPoints: ["example と value の流れに注目します。"],
-  checks: ["value の型は選択範囲からは確認できません。"],
+  checks: ["value の型は候補コードからは確認できません。"],
   questions: ["value.strip() の結果はどこへ渡りますか？"],
   hints: ["return value.strip() を内側から追います。"],
   nextCandidates: [
@@ -130,7 +130,7 @@ test("詳しい説明は明示された段階のレスポンスとして返す",
   const response = await worker({
     supportReading: async () => ({
       detailedExplanation:
-        "example は value.strip() の結果を返します。型は選択範囲からは確認できません。",
+        "example は value.strip() の結果を返します。型は候補コードからは確認できません。",
     }),
   }).fetch(request({ ...input, stage: "detailed_explanation" }), env());
   const body = await response.json();
@@ -141,7 +141,7 @@ test("詳しい説明は明示された段階のレスポンスとして返す",
   );
   assert.equal(body.stage, "detailed_explanation");
   assert.deepEqual(body.hints, []);
-  assert.match(body.detailedExplanation, /選択範囲からは確認できません/u);
+  assert.match(body.detailedExplanation, /候補コードからは確認できません/u);
 });
 
 test("読解サポートのモデル障害とタイムアウトを専用コードへ変換する", async (context) => {

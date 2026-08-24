@@ -72,7 +72,7 @@ nested functionは構文木上では認識するが、外側のローカル変�
 
 Content Scriptは埋め込みページ情報から、表示中blobの `repository`、ref名、`path` に加えてcommit OIDを取得する。Background Workerは、Content Scriptの結果をそのまま信用せず、message senderのtab URLとの一致、public repository、値の型と長さ、`.py` suffix、commit OIDが40文字または64文字の16進数であることを再検証する。検証済みの `repository`、commit OID、`path` だけを固定のGitHub API URL builderへ渡し、呼び出し先hostを入力から変更できないようにする。
 
-commit OIDはページ変更判定とUI状態のidentityにも含める。同じbranch URL、repository、ref名、pathのままcommit OIDだけが変わった場合も、Content Scriptはページ変更を通知し、Side Panelは前の候補・選択・回答をresetして新しいOIDの候補を取得する。候補requestにはimmutable context key（repository / commit OID / path）とrequest IDを付け、response受信時のcurrent contextと一致しない古いresponseは表示せず棄却する。
+commit OIDはページ変更判定とUI状態のidentityにも含める。同じbranch URL、repository、ref名、pathのままcommit OIDだけが変わった場合も、Content Scriptはページ変更を通知し、Side Panelは前の候補・対象コード・回答をresetして新しいOIDの候補を取得する。候補requestにはimmutable context key（repository / commit OID / path）とrequest IDを付け、response受信時のcurrent contextと一致しない古いresponseは表示せず棄却する。
 
 防御的な入力上限として、ownerとrepository名は各100文字、ref名は1,024文字、pathは4,096文字、tab URLは8,192文字までとする。空segment、NUL、`.` / `..` path segment、decodeに失敗する値を拒否し、URL生成には文字列連結ではなく `URL` とsegment単位のencodeを使う。これらはGitHubの仕様上限を表す値ではなく、不正messageによるrate limit消費とcache key肥大化をBackground境界で抑える製品側の上限である。
 
@@ -82,7 +82,7 @@ Accept: application/vnd.github.raw+json
 X-GitHub-Api-Version: 2022-11-28
 ```
 
-このendpointはpublic repositoryであれば認証なしで利用でき、`ref` と `path` を別々に渡せる。ref名ではなく、ページが実際に表示したimmutableなcommit OIDを `ref` に指定するため、閲覧中にbranchが移動しても画面と異なる版を取得しない。repositoryとpathの各segment、commit OIDはそれぞれpercent-encodeする。ページ情報からcommit OIDを確認できない場合はref名で代替せず、おまかせ候補を利用不可として自由トレーニングへ案内する。実装時は `https://api.github.com/*` を `host_permissions` へ追加する。
+このendpointはpublic repositoryであれば認証なしで利用でき、`ref` と `path` を別々に渡せる。ref名ではなく、ページが実際に表示したimmutableなcommit OIDを `ref` に指定するため、閲覧中にbranchが移動しても画面と異なる版を取得しない。repositoryとpathの各segment、commit OIDはそれぞれpercent-encodeする。ページ情報からcommit OIDを確認できない場合はref名で代替せず、ページの再読み込みまたは別のpublic Pythonファイルでの再試行を案内する。実装時は `https://api.github.com/*` を `host_permissions` へ追加する。
 
 評価APIへ渡す `sourceUrl` に現在のbranch URLを再利用しない。検証済みのowner、repository、commit OID、pathから、固定builderで次のimmutable blob permalinkを生成する。
 
@@ -90,13 +90,13 @@ X-GitHub-Api-Version: 2022-11-28
 https://github.com/{owner}/{repo}/blob/{commitOid}/{path}
 ```
 
-各segmentをpercent-encodeしたASCII URLが `https://github.com` のPython blob URLであり、`.py` で終わり、既存評価契約の2,048文字以下であることを候補提示前に検証する。取得には成功してもpermalinkが契約を満たさない場合、そのファイルからおまかせ候補を提示しない。これにより、回答中にbranchが移動しても取得したcodeと評価APIが存在確認するURLのcommitを一致させる。
+各segmentをpercent-encodeしたASCII URLが `https://github.com` のPython blob URLであり、`.py` で終わり、既存評価契約の2,048文字以下であることを候補提示前に検証する。取得には成功してもpermalinkが契約を満たさない場合、そのファイルからおすすめ候補を提示しない。これにより、回答中にbranchが移動しても取得したcodeと評価APIが存在確認するURLのcommitを一致させる。
 
 GitHubのcode表示DOMから本文を組み立てる方式は採用しない。DOM構造変更、長いファイルのvirtualization、行番号や装飾の混入が取得結果に影響するためである。`raw.githubusercontent.com` のURLを直接組み立てる方式も、`ref` と `path` の境界をURL pathだけで表す必要があるため、Contents APIを正本とする。
 
 MVPはpublic repositoryだけを対象とするため、GitHub tokenを拡張機能へ保存しない。未認証REST APIのprimary rate limitは送信元IP単位で1時間60requestであるため、同一の `repository` / commit OID / `path` に対する同時requestをまとめる。commit OIDはimmutableなので、成功した取得結果だけをmemory cacheへ保存する。cacheはLRUで最大8entryかつ合計4 MiBまでとし、どちらかを超える前に古いentryを破棄する。in-flight requestと成功cacheは分離し、失敗、timeout、abort時はin-flight entryを必ず削除して再試行を妨げない。
 
-`403` / `429` とrate limit headerを識別し、おまかせ候補を表示できない場合も自由トレーニングへ案内する。rate limitを増やすためのtoken導入はMVP対象外とする。
+`403` / `429` とrate limit headerを識別し、候補を表示できない場合は再試行または別のpublic Pythonファイルを開くよう案内する。rate limitを増やすためのtoken導入はMVP対象外とする。
 
 取得処理では以下を検証する。
 
@@ -168,11 +168,11 @@ fixture全体と期待する候補codeを比較し、少なくとも次を含め
 ### 結合・配布テスト
 
 - Background Workerがページcontextを受け、source取得と抽出を経て候補を返すmessage flow
-- 候補を選ぶと自由トレーニングと同じ評価入力へcodeと同じcommitのimmutable `sourceUrl` が渡ること
+- 候補を選ぶとトレーニングと同じ評価入力へcodeと同じcommitのimmutable `sourceUrl` が渡ること
 - 回答中にbranchが移動しても、候補のcodeと `sourceUrl` のcommit OIDが変わらないこと
-- 同一branch URLでcommit OIDがAからBへ変わるとページ変更を通知し、前の候補・選択・回答をresetしてBを再取得すること
+- 同一branch URLでcommit OIDがAからBへ変わるとページ変更を通知し、前の候補・対象コード・回答をresetしてBを再取得すること
 - OID Aの遅延responseがOID Bのcurrent contextへ到着しても、context keyまたはrequest IDの不一致で表示しないこと
-- 取得・解析error時に候補なしと障害を区別し、自由トレーニングへ案内すること
+- 取得・解析error時に候補なしと障害を区別し、再試行方法を案内すること
 - 本番extension buildにparserが含まれ、外部scriptを実行しないこと
 - parser追加前後の `dist/extension` のbyte数と、代表fixture（小・中・上限付近）の解析時間を記録すること
 
