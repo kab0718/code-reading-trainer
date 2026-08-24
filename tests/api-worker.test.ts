@@ -274,7 +274,7 @@ test("body読取や外部処理を含むAPI全体の期限超過を504へ変換�
       return new Promise(() => {});
     },
     setTimeout: (callback, timeout) => {
-      assert.equal(timeout, 31_000);
+      assert.equal(timeout, 60_000);
       deadlineCallback = callback;
       return "api-timeout";
     },

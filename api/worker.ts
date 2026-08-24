@@ -17,7 +17,7 @@ import type {
 import { supportReadingWithWorkersAI } from "./workers-reading-support.ts";
 
 const MAX_BODY_BYTES = 64 * 1024;
-const API_TIMEOUT_MS = 31_000;
+const API_TIMEOUT_MS = 60_000;
 const SOURCE_CHECK_TIMEOUT_MS = 3_000;
 const EVALUATION_PATH = "/v1/evaluations";
 const READING_SUPPORT_PATH = "/v1/reading-support";
@@ -31,7 +31,6 @@ const READING_SUPPORT_REQUEST_FIELDS = [
   "language",
   "sourceUrl",
   "code",
-  "question",
   "stage",
 ] as const;
 const GITHUB_PYTHON_URL =
@@ -87,7 +86,7 @@ const ERROR_DEFINITIONS = {
   READING_SUPPORT_TIMEOUT: {
     status: 504,
     message:
-      "読解サポートがタイムアウトしました。入力を保持したまま再試行できます。",
+      "読解サポートがタイムアウトしました。選択コードを保持したまま再試行できます。",
     retryable: true,
   },
 } as const;
@@ -393,10 +392,7 @@ function validateReadingSupportRequestBody(
       reason: "公開GitHub repositoryのPythonファイルURLを指定してください。",
     });
   }
-  for (const [field, maximum] of [
-    ["code", 30_000],
-    ["question", 2_000],
-  ] as const) {
+  for (const [field, maximum] of [["code", 30_000]] as const) {
     if (field in value) {
       if (typeof value[field] !== "string") {
         details.push({ field, reason: "文字列で入力してください。" });

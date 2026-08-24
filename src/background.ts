@@ -7,7 +7,7 @@ importScripts(
 import { requestTrainingCandidates } from "./python-candidates.js";
 
 (() => {
-  const EVALUATION_TIMEOUT_MS = 36_000;
+  const EVALUATION_TIMEOUT_MS = 70_000;
   const MAX_REQUEST_BYTES = 64 * 1024;
   const inFlightEvaluations = new Map<
     string,
@@ -46,11 +46,10 @@ import { requestTrainingCandidates } from "./python-candidates.js";
   ): value is ReadingSupportRequest {
     return (
       isRecord(value) &&
-      Object.keys(value).length === 5 &&
+      Object.keys(value).length === 4 &&
       value.language === "python" &&
       typeof value.sourceUrl === "string" &&
       typeof value.code === "string" &&
-      typeof value.question === "string" &&
       (value.stage === "guide" || value.stage === "detailed_explanation")
     );
   }
@@ -100,17 +99,15 @@ import { requestTrainingCandidates } from "./python-candidates.js";
     if (
       !isValidSourceUrl(request.sourceUrl) ||
       request.code.trim().length === 0 ||
-      request.question.trim().length === 0 ||
-      countCharacters(request.code) > 30_000 ||
-      countCharacters(request.question) > 2_000
+      countCharacters(request.code) > 30_000
     ) {
-      return "読解するコードと質問・調査目的を確認してください。";
+      return "読解するコードを確認してください。";
     }
     if (
       new TextEncoder().encode(JSON.stringify(request)).byteLength >
       MAX_REQUEST_BYTES
     ) {
-      return "読解するコードと質問・調査目的の合計サイズが上限を超えています。";
+      return "読解するコードのサイズが上限を超えています。";
     }
     return null;
   }
@@ -295,19 +292,19 @@ import { requestTrainingCandidates } from "./python-candidates.js";
       if (controller.signal.aborted) {
         return createError(
           "READING_SUPPORT_TIMEOUT",
-          "読解サポートがタイムアウトしました。入力は保持されています。",
+          "読解サポートがタイムアウトしました。選択コードは保持されています。",
           true,
         );
       }
       return receivedResponse
         ? createError(
             "INVALID_API_RESPONSE",
-            "読解サポートAPIから不正な応答を受信しました。入力は保持されています。",
+            "読解サポートAPIから不正な応答を受信しました。選択コードは保持されています。",
             true,
           )
         : createError(
             "NETWORK_ERROR",
-            "読解サポートAPIに接続できませんでした。入力は保持されています。",
+            "読解サポートAPIに接続できませんでした。選択コードは保持されています。",
             true,
           );
     } finally {
@@ -329,7 +326,7 @@ import { requestTrainingCandidates } from "./python-candidates.js";
     }
     return createError(
       "INVALID_API_RESPONSE",
-      "読解サポートAPIから不正な応答を受信しました。入力は保持されています。",
+      "読解サポートAPIから不正な応答を受信しました。選択コードは保持されています。",
       true,
     );
   }

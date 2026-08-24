@@ -4,9 +4,7 @@
   "error": {
     "code": "VALIDATION_ERROR",
     "message": "リクエストの入力値を確認してください。",
-    "details": [
-      { "field": "question", "reason": "1文字以上で入力してください。" }
-    ],
+    "details": [{ "field": "code", "reason": "1文字以上で入力してください。" }],
     "retryable": false
   }
 }

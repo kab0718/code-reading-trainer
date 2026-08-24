@@ -51,11 +51,6 @@
   const newTrainingButton = requireElement<HTMLButtonElement>(
     "#new-training-button",
   );
-  const readingQuestionElement =
-    requireElement<HTMLTextAreaElement>("#reading-question");
-  const readingQuestionCountElement = requireElement<HTMLElement>(
-    "#reading-question-count",
-  );
   const readingInputErrorElement = requireElement<HTMLElement>(
     "#reading-input-error",
   );
@@ -240,10 +235,6 @@
     explanationElement.setAttribute("aria-invalid", "false");
     explanationCountElement.textContent = `0 / ${inputValidation.INPUT_LIMITS.explanation.toLocaleString("ja-JP")}文字`;
     inputErrorElement.textContent = "";
-    readingQuestionElement.value = "";
-    readingQuestionElement.readOnly = false;
-    readingQuestionElement.setAttribute("aria-invalid", "false");
-    readingQuestionCountElement.textContent = `0 / ${inputValidation.INPUT_LIMITS.question.toLocaleString("ja-JP")}文字`;
     readingInputErrorElement.textContent = "";
     readingSubmitButton.disabled = true;
     readingSubmitButton.textContent = "読むためのガイドを受け取る";
@@ -304,7 +295,7 @@
         ? evaluationState.message
         : "選択したコードを読み、自分の言葉で説明してみましょう。"
       : (readingStatusMessage ??
-        "分からない点や調査目的を書き、まず読むためのガイドを受け取りましょう。");
+        "選択コードから、模範解答に必要な観点をガイドとして整理します。");
     updateInputValidation();
     updateReadingInputValidation();
   }
@@ -312,18 +303,9 @@
   function updateReadingInputValidation(): ReadingSupportInputValidation {
     const validation = inputValidation.validateReadingSupportInput(
       selectedCodeElement.textContent,
-      readingQuestionElement.value,
-    );
-    readingQuestionCountElement.textContent = `${validation.questionCharacterCount.toLocaleString("ja-JP")} / ${inputValidation.INPUT_LIMITS.question.toLocaleString("ja-JP")}文字`;
-    readingQuestionElement.setAttribute(
-      "aria-invalid",
-      validation.questionError ? "true" : "false",
     );
     readingInputErrorElement.textContent =
-      validation.codeError ??
-      validation.questionError ??
-      readingApiInputError ??
-      "";
+      validation.codeError ?? readingApiInputError ?? "";
     const retryWaiting =
       retryAfterUntil !== null && retryAfterUntil > Date.now();
     readingSubmitButton.disabled =
@@ -383,13 +365,11 @@
     const request: ReadingSupportRequest = {
       code: selectedCodeElement.textContent ?? "",
       language: "python",
-      question: readingQuestionElement.value,
       sourceUrl: selectedSourceUrl,
       stage,
     };
     const attempt = ++readingAttempt;
     readingSubmitting = true;
-    readingQuestionElement.readOnly = true;
     selectionButton.disabled = true;
     readingApiInputError = null;
     readingRetryable = true;
@@ -431,13 +411,14 @@
       if (attempt !== readingAttempt) return;
       if ("error" in result) {
         readingResultErrorElement.textContent = result.error.message;
-        readingStatusMessage = `${result.error.message} 入力は保持されています。`;
+        readingStatusMessage = `${result.error.message} 選択コードは保持されています。`;
         statusElement.textContent = readingStatusMessage;
         if (stage === "guide") {
-          readingApiInputError =
+          const detailsMessage =
             result.error.details
               ?.map((detail) => `${detail.field}: ${detail.reason}`)
               .join("\n") ?? "";
+          readingApiInputError = detailsMessage || result.error.message;
           readingRetryable = result.error.retryable;
         } else if (!result.error.retryable) {
           readingRetryable = false;
@@ -474,15 +455,15 @@
     } catch {
       const message =
         stage === "guide"
-          ? "読解サポートを開始できませんでした。入力は保持されています。もう一度お試しください。"
+          ? "読解サポートを開始できませんでした。選択コードは保持されています。もう一度お試しください。"
           : "詳しい説明を取得できませんでした。もう一度お試しください。";
       readingResultErrorElement.textContent = message;
+      if (stage === "guide") readingApiInputError = message;
       readingStatusMessage = message;
       statusElement.textContent = message;
     } finally {
       if (attempt === readingAttempt) {
         readingSubmitting = false;
-        readingQuestionElement.readOnly = false;
         readingSubmitButton.textContent = "読むためのガイドを受け取る";
         selectionButton.disabled =
           activePageKey === null || readingGuide !== null;
@@ -580,7 +561,9 @@
 
     explanationCountElement.textContent = `${validation.explanationCharacterCount.toLocaleString("ja-JP")} / ${inputValidation.INPUT_LIMITS.explanation.toLocaleString("ja-JP")}文字`;
     const apiInputError =
-      evaluationState.status === "error" ? evaluationState.inputError : null;
+      evaluationState.status === "error"
+        ? (evaluationState.inputError ?? evaluationState.message)
+        : null;
     const explanationInvalid =
       validation.explanationError !== null ||
       (evaluationState.status === "error" &&
@@ -747,15 +730,6 @@
 
   trainingModeButton.addEventListener("click", () => setMode("training"));
   readingModeButton.addEventListener("click", () => setMode("reading_support"));
-
-  readingQuestionElement.addEventListener("input", () => {
-    readingApiInputError = null;
-    readingRetryable = true;
-    readingStatusMessage = null;
-    readingInputErrorElement.textContent = "";
-    readingResultErrorElement.textContent = "";
-    updateReadingInputValidation();
-  });
 
   readingSubmitButton.addEventListener("click", () => {
     if (selectedMode === "reading_support") {
