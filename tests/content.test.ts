@@ -37,7 +37,15 @@ function normalize(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
-function createContentEnvironment() {
+type ContentEnvironmentOptions = {
+  embeddedAppName?: string;
+  embeddedDataByAppName?: Record<string, string>;
+};
+
+function createContentEnvironment({
+  embeddedAppName = "code-view",
+  embeddedDataByAppName,
+}: ContentEnvironmentOptions = {}) {
   let messageListener;
   let observerCallback;
   let currentEmbeddedData = embeddedData("main", "Lib/abc.py");
@@ -76,8 +84,13 @@ function createContentEnvironment() {
         if (selector.includes("repository_public")) {
           return { content: "true" };
         }
-        if (selector.includes("react-app")) {
-          return { textContent: currentEmbeddedData };
+        const embeddedDataEntries = embeddedDataByAppName
+          ? Object.entries(embeddedDataByAppName)
+          : [[embeddedAppName, currentEmbeddedData]];
+        for (const [appName, appEmbeddedData] of embeddedDataEntries) {
+          if (selector.includes(`react-app[app-name="${appName}"]`)) {
+            return { textContent: appEmbeddedData };
+          }
         }
         return null;
       },
@@ -148,6 +161,56 @@ test("GET_PAGE_CONTEXTで対象ページと選択コードを返す", () => {
     title: "abc.py at main · python/cpython",
     selectedText: "def example():\n    pass",
   });
+});
+
+test("現在形式のcode-viewから埋め込みデータを取得する", () => {
+  const environment = createContentEnvironment({
+    embeddedAppName: "code-view",
+  });
+
+  assert.equal(environment.getContext().status, "eligible");
+  assert.equal(environment.getContext().path, "Lib/abc.py");
+});
+
+test("従来形式のreact-code-viewから埋め込みデータを取得する", () => {
+  const environment = createContentEnvironment({
+    embeddedAppName: "react-code-view",
+  });
+
+  assert.equal(environment.getContext().status, "eligible");
+  assert.equal(environment.getContext().path, "Lib/abc.py");
+});
+
+test("新旧形式が共存する場合はDOM順によらずcode-viewを優先する", () => {
+  const environment = createContentEnvironment({
+    embeddedDataByAppName: {
+      "react-code-view": embeddedData("old", "Lib/old.py"),
+      "code-view": embeddedData("main", "Lib/abc.py"),
+    },
+  });
+
+  assert.equal(environment.getContext().status, "eligible");
+  assert.equal(environment.getContext().ref, "main");
+  assert.equal(environment.getContext().path, "Lib/abc.py");
+});
+
+test("code-viewのJSONが不正な場合は従来形式へフォールバックする", () => {
+  const environment = createContentEnvironment({
+    embeddedDataByAppName: {
+      "code-view": "{invalid-json",
+      "react-code-view": embeddedData("main", "Lib/abc.py"),
+    },
+  });
+
+  assert.equal(environment.getContext().status, "eligible");
+  assert.equal(environment.getContext().path, "Lib/abc.py");
+});
+
+test("未対応のapp-nameではページデータ取得不可として扱う", () => {
+  const environment = createContentEnvironment({ embeddedAppName: "unknown" });
+
+  assert.equal(environment.getContext().status, "unsupported");
+  assert.equal(environment.getContext().reason, "page-data-unavailable");
 });
 
 test("選択コードのインデントと末尾改行を保ったまま返す", () => {

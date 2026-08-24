@@ -8,19 +8,25 @@
   }
 
   function readEmbeddedData(): unknown {
-    const element = document.querySelector(
+    const selectors = [
+      'react-app[app-name="code-view"] script[data-target="react-app.embeddedData"]',
       'react-app[app-name="react-code-view"] script[data-target="react-app.embeddedData"]',
-    );
+    ];
 
-    if (!element?.textContent) {
-      return undefined;
+    for (const selector of selectors) {
+      const textContent = document.querySelector(selector)?.textContent;
+      if (!textContent) {
+        continue;
+      }
+
+      try {
+        return JSON.parse(textContent);
+      } catch {
+        continue;
+      }
     }
 
-    try {
-      return JSON.parse(element.textContent);
-    } catch {
-      return undefined;
-    }
+    return undefined;
   }
 
   function getPageContext(): PageContext {
