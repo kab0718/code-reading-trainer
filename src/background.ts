@@ -5,7 +5,7 @@ importScripts(
 );
 
 (() => {
-  const EVALUATION_TIMEOUT_MS = 30_000;
+  const EVALUATION_TIMEOUT_MS = 36_000;
   const MAX_REQUEST_BYTES = 64 * 1024;
   const inFlightEvaluations = new Map<
     string,

@@ -1,7 +1,5 @@
 (() => {
-  // デプロイ先が決まったら、完全な評価API URLをここへ設定する。
-  // 未設定の配布物は外部送信を行わず、明示的な設定エラーを返す。
-  const EVALUATION_API_URL: string | null = null;
+  const EVALUATION_API_URL: string | null = "__BUILD_EVALUATION_API_URL__";
 
   function getEvaluationApiUrl(): string | null {
     return EVALUATION_API_URL;

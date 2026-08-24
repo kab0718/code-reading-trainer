@@ -17,7 +17,7 @@ import type {
 import { supportReadingWithWorkersAI } from "./workers-reading-support.ts";
 
 const MAX_BODY_BYTES = 64 * 1024;
-const API_TIMEOUT_MS = 25_000;
+const API_TIMEOUT_MS = 31_000;
 const SOURCE_CHECK_TIMEOUT_MS = 3_000;
 const EVALUATION_PATH = "/v1/evaluations";
 const READING_SUPPORT_PATH = "/v1/reading-support";
@@ -109,6 +109,7 @@ interface RateLimiter {
 
 export interface WorkerEnvironment extends WorkersAiEnvironment {
   ALLOWED_EXTENSION_IDS?: string;
+  ALLOWED_EXTENSION_IDS_SECRET?: string;
   ALLOW_MISSING_ORIGIN?: string;
   RATE_LIMITER?: RateLimiter;
 }
@@ -236,7 +237,11 @@ function getAllowedOrigin(
   env: WorkerEnvironment,
 ): string | null {
   const origin = request.headers.get("Origin");
-  const allowedIds = (env.ALLOWED_EXTENSION_IDS ?? "")
+  const allowedIds = (
+    env.ALLOWED_EXTENSION_IDS_SECRET ??
+    env.ALLOWED_EXTENSION_IDS ??
+    ""
+  )
     .split(",")
     .map((id) => id.trim())
     .filter(Boolean);

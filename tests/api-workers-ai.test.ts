@@ -307,7 +307,7 @@ test("Workers AI無料割当超過を専用エラーへ変換する", async () =
   );
 });
 
-test("モデル呼び出しを23秒のtimerで中断してtimeoutへ変換する", async () => {
+test("モデル呼び出しを28秒のtimerで中断してtimeoutへ変換する", async () => {
   let timeoutCallback;
   let requestedTimeout;
   let timeoutCancelled = false;
@@ -341,7 +341,7 @@ test("モデル呼び出しを23秒のtimerで中断してtimeoutへ変換する
     },
   );
 
-  assert.equal(requestedTimeout, 23_000);
+  assert.equal(requestedTimeout, 28_000);
   assert.equal(receivedSignal.aborted, false);
   timeoutCallback();
   await assert.rejects(evaluation, ModelTimeoutError);

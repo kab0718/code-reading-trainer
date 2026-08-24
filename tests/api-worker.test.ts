@@ -126,6 +126,17 @@ test("有効なリクエストへv1契約に適合する採点結果を返す", 
   );
 });
 
+test("本番Secretの拡張機能IDを通常の環境変数より優先する", async () => {
+  const env = createEnvironment();
+  env.ALLOWED_EXTENSION_IDS = "not-allowed";
+  env.ALLOWED_EXTENSION_IDS_SECRET = "abcdefghijklmnop";
+
+  const response = await createTestWorker().fetch(createRequest(), env);
+
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("Access-Control-Allow-Origin"), origin);
+});
+
 test("許可されていない拡張機能Originを401で拒否する", async () => {
   const request = createRequest(JSON.stringify(validInput), {
     Origin: "chrome-extension://not-allowed",
@@ -133,6 +144,21 @@ test("許可されていない拡張機能Originを401で拒否する", async ()
   const response = await createTestWorker().fetch(request, createEnvironment());
 
   await expectContractError(response, 401, "UNAUTHORIZED");
+});
+
+test("Originがない本番リクエストを401で拒否する", async () => {
+  const request = new Request("https://evaluation.example/v1/evaluations", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "CF-Connecting-IP": "192.0.2.10",
+    },
+    body: "{",
+  });
+  const response = await createTestWorker().fetch(request, createEnvironment());
+
+  await expectContractError(response, 401, "UNAUTHORIZED");
+  assert.equal(response.headers.get("Access-Control-Allow-Origin"), null);
 });
 
 test("壊れたJSONを400で拒否する", async () => {
@@ -248,7 +274,7 @@ test("body読取や外部処理を含むAPI全体の期限超過を504へ変換�
       return new Promise(() => {});
     },
     setTimeout: (callback, timeout) => {
-      assert.equal(timeout, 25_000);
+      assert.equal(timeout, 31_000);
       deadlineCallback = callback;
       return "api-timeout";
     },
