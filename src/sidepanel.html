@@ -16,8 +16,19 @@
 
       <section id="training-methods">
         <h2>トレーニング方法</h2>
-        <button type="button" disabled>おすすめから選ぶ</button>
+        <button type="button" id="recommendation-button">
+          おすすめから選ぶ
+        </button>
         <button type="button" id="selection-button">
+          選択したコードを読む
+        </button>
+      </section>
+
+      <section id="candidate-section" aria-live="polite" hidden>
+        <h2>おすすめ候補</h2>
+        <p id="candidate-status" class="status"></p>
+        <div id="candidate-list" class="candidate-list"></div>
+        <button type="button" id="candidate-free-training-button">
           選択したコードを読む
         </button>
       </section>

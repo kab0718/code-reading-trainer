@@ -79,6 +79,20 @@ execFileSync(
   },
 );
 
+await rm(path.join(outputRoot, "src/python-candidates.js"), { force: true });
+
+execFileSync(
+  path.join(projectRoot, "node_modules/.bin/esbuild"),
+  [
+    "src/background.ts",
+    "--bundle",
+    "--format=iife",
+    "--platform=browser",
+    `--outfile=${path.join(outputRoot, "src/background.js")}`,
+  ],
+  { cwd: projectRoot, stdio: "inherit" },
+);
+
 await mkdir(path.join(outputRoot, "src"), { recursive: true });
 await mkdir(path.join(outputRoot, "assets/icons"), { recursive: true });
 await Promise.all([

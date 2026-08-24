@@ -7,7 +7,7 @@
     "128": "assets/icons/code-reading-trainer-128.png"
   },
   "permissions": ["sidePanel", "storage", "activeTab"],
-  "host_permissions": ["https://github.com/*"],
+  "host_permissions": ["https://github.com/*", "https://api.github.com/*"],
   "optional_host_permissions": ["https://*.workers.dev/*"],
   "background": {
     "service_worker": "src/background.js"

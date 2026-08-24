@@ -14,10 +14,11 @@ const contentSource = await readFile(
   "utf8",
 );
 
-function embeddedData(ref, filePath) {
+function embeddedData(ref, filePath, commitOid = undefined) {
   return JSON.stringify({
     payload: {
       codeViewBlobLayoutRoute: {
+        ...(commitOid ? { commitOid } : {}),
         path: filePath,
         refInfo: { name: ref },
       },
@@ -118,8 +119,8 @@ function createContentEnvironment() {
       currentEmbeddedData = embeddedData(ref, filePath);
       observerCallback();
     },
-    setEmbeddedData(ref, filePath) {
-      currentEmbeddedData = embeddedData(ref, filePath);
+    setEmbeddedData(ref, filePath, commitOid = undefined) {
+      currentEmbeddedData = embeddedData(ref, filePath, commitOid);
       observerCallback();
     },
     setSelection(value) {
@@ -156,6 +157,14 @@ test("選択コードのインデントと末尾改行を保ったまま返す",
   environment.setSelection(selectedText);
 
   assert.equal(environment.getContext().selectedText, selectedText);
+});
+
+test("表示中blobのcommit OIDをページ情報へ含める", () => {
+  const environment = createContentEnvironment();
+  const commitOid = "c".repeat(40);
+  environment.setEmbeddedData("main", "Lib/abc.py", commitOid);
+
+  assert.equal(environment.getContext().commitOid, commitOid);
 });
 
 test("SPA遷移では一時状態の後も同じURLを再判定する", () => {

@@ -16,6 +16,7 @@ interface PageDetails {
 }
 
 interface EligiblePageContext extends PageDetails {
+  commitOid?: string;
   path: string;
   reason: null;
   ref: string;
@@ -34,6 +35,7 @@ type AnalyzedPageContext = EligiblePageContext | UnsupportedPageContext;
 
 type PageContext = AnalyzedPageContext & {
   selectedText?: string;
+  tabId?: number;
   title?: string;
 };
 
@@ -55,11 +57,42 @@ interface PageContextApi {
 }
 
 interface EmbeddedDetails {
+  commitOid?: string;
   path?: string;
   ref?: string;
   repository?: string;
   repositoryPublic?: boolean;
 }
+
+type TrainingCandidateLevel = "warmup" | "recommended" | "challenge";
+
+interface TrainingCandidate {
+  code: string;
+  difficulty: "初級" | "中級" | "上級";
+  estimatedMinutes: number;
+  id: string;
+  kind: "function" | "method";
+  level: TrainingCandidateLevel;
+  name: string;
+  reason: string;
+  sourceUrl: string;
+  startLine: number;
+  endLine: number;
+}
+
+type TrainingCandidatesWorkerResult =
+  | {
+      candidates: TrainingCandidate[];
+      contextKey: string;
+      ok: true;
+      requestId: string;
+    }
+  | {
+      contextKey: string;
+      error: { code: string; message: string; retryable: boolean };
+      ok: false;
+      requestId: string;
+    };
 
 interface TrainingInputValidation {
   codeCharacterCount: number;

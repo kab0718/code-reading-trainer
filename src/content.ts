@@ -68,6 +68,7 @@
       context.repository,
       context.ref,
       context.path,
+      context.status === PAGE_STATUS.ELIGIBLE ? context.commitOid : null,
     ]);
   }
 
