@@ -32,7 +32,7 @@ interface EvaluationOptions {
   setTimeout?: (callback: () => void, milliseconds: number) => unknown;
 }
 
-const MODEL_TIMEOUT_MS = 28_000;
+const MODEL_TIMEOUT_MS = 55_000;
 const MAX_MODEL_ATTEMPTS = 2;
 const MODEL_SEED = 1;
 const PYTHON_KEYWORDS = new Set([

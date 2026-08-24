@@ -104,8 +104,6 @@ interface TrainingInputValidation {
 interface ReadingSupportInputValidation {
   codeCharacterCount: number;
   codeError: string | null;
-  questionCharacterCount: number;
-  questionError: string | null;
   valid: boolean;
 }
 
@@ -113,17 +111,13 @@ interface InputValidationApi {
   INPUT_LIMITS: Readonly<{
     code: number;
     explanation: number;
-    question: number;
   }>;
   countCharacters(value: string): number;
   validateTrainingInput(
     code: string,
     explanation: string,
   ): TrainingInputValidation;
-  validateReadingSupportInput(
-    code: string,
-    question: string,
-  ): ReadingSupportInputValidation;
+  validateReadingSupportInput(code: string): ReadingSupportInputValidation;
 }
 
 interface EvaluationRequest {
@@ -138,7 +132,6 @@ type ReadingSupportStage = "guide" | "detailed_explanation";
 interface ReadingSupportRequest {
   code: string;
   language: "python";
-  question: string;
   sourceUrl: string;
   stage: ReadingSupportStage;
 }

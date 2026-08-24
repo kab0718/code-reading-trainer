@@ -2,6 +2,5 @@
   "language": "python",
   "sourceUrl": "https://github.com/example/project/blob/main/example.py",
   "code": "def normalize(value):\n    return value.strip().lower()",
-  "question": "処理の順序と前提を確認したい",
   "stage": "guide"
 }

@@ -76,17 +76,9 @@
         </section>
 
         <section id="reading-input" hidden>
-          <label for="reading-question">分からない点または調査目的</label>
-          <textarea
-            id="reading-question"
-            rows="6"
-            aria-describedby="reading-question-count reading-input-error"
-            placeholder="例: この分岐が必要な理由と、次に確認すべき関数を知りたい"
-          ></textarea>
-          <p id="reading-question-count" class="character-count"></p>
           <p id="reading-input-error" class="input-error" role="alert"></p>
           <p class="privacy-note">
-            対象コードとこの入力はAIへ送信しますが、履歴や計測イベントには保存しません。
+            対象コードはAIへ送信しますが、履歴や計測イベントには保存しません。
           </p>
           <button type="button" id="reading-submit-button" disabled>
             読むためのガイドを受け取る
@@ -157,6 +149,7 @@
       >
         <p class="result-kicker">READING GUIDE</p>
         <h2 id="reading-result-title">読むためのガイド</h2>
+        <p id="reading-result-error" class="input-error" role="alert"></p>
         <div class="reading-block">
           <h3>注目するところ</h3>
           <ul id="focus-points-list" class="reading-list"></ul>
@@ -177,7 +170,6 @@
           <h3>次に確認する候補</h3>
           <ul id="next-candidates-list" class="reading-list"></ul>
         </div>
-        <p id="reading-result-error" class="input-error" role="alert"></p>
         <button type="button" id="detail-button">詳しい説明を見る</button>
         <div id="detailed-explanation-block" class="reading-block" hidden>
           <h3>詳しい説明</h3>

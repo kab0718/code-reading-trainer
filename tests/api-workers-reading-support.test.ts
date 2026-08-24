@@ -9,7 +9,6 @@ const input = {
   language: "python",
   sourceUrl: "https://github.com/example/repo/blob/main/example.py",
   code: "def example(value):\n    return value.strip()",
-  question: "value の処理を理解したい",
   stage: "guide",
 } satisfies ReadingSupportInput;
 
@@ -31,7 +30,7 @@ test("ガイド生成ではURLをAIへ送らず専用Schemaとタグを使う", 
     AI_MODEL: "test-model",
     AI: {
       async run(_model, modelInput, options) {
-        if (options.tags[0].endsWith(":grounding-check")) {
+        if (options.tags[0].endsWith(":grounding")) {
           return { response: groundedVerification };
         }
         receivedInput = modelInput;
@@ -47,63 +46,105 @@ test("ガイド生成ではURLをAIへ送らず専用Schemaとタグを使う", 
     receivedInput.messages[1].content.includes(input.sourceUrl),
     false,
   );
-  assert.deepEqual(receivedOptions.tags, [
-    "code-reading-trainer:reading-support:guide",
-  ]);
+  assert.deepEqual(receivedOptions.tags, ["crt:reading:guide"]);
 });
 
-test("対象コードにない次候補を含む出力は1回再生成しても拒否する", async () => {
+test("対象コードにない次候補が続く場合は安全なガイドへフォールバックする", async () => {
   let calls = 0;
-  await assert.rejects(
-    supportReadingWithWorkersAI(input, {
-      AI_MODEL: "test-model",
-      AI: {
-        async run() {
-          calls += 1;
-          return {
-            response: {
-              ...guide,
-              nextCandidates: [
-                { symbol: "missing_symbol", reason: "推測した候補です。" },
-              ],
-            },
-          };
-        },
+  const result = await supportReadingWithWorkersAI(input, {
+    AI_MODEL: "test-model",
+    AI: {
+      async run() {
+        calls += 1;
+        return {
+          response: {
+            ...guide,
+            nextCandidates: [
+              { symbol: "missing_symbol", reason: "推測した候補です。" },
+            ],
+          },
+        };
       },
-    }),
-    ModelResponseError,
-  );
+    },
+  });
+  assert.ok("focusPoints" in result);
+  assert.deepEqual(result.nextCandidates, []);
+  assert.match(result.focusPoints[0], /example/u);
   assert.equal(calls, 2);
 });
 
-test("コード識別子に根拠付けられていない確認事項も拒否する", async () => {
-  await assert.rejects(
-    supportReadingWithWorkersAI(input, {
-      AI_MODEL: "test-model",
-      AI: {
-        async run() {
-          return {
-            response: {
-              ...guide,
-              checks: ["データベースへ保存されることを確認します。"],
-            },
-          };
-        },
+test("コード識別子に根拠付けられない出力も安全なガイドへフォールバックする", async () => {
+  const result = await supportReadingWithWorkersAI(input, {
+    AI_MODEL: "test-model",
+    AI: {
+      async run() {
+        return {
+          response: {
+            ...guide,
+            checks: ["データベースへ保存されることを確認します。"],
+          },
+        };
       },
-    }),
-    ModelResponseError,
-  );
+    },
+  });
+  assert.ok("checks" in result);
+  assert.match(result.checks[0], /example/u);
 });
 
-test("範囲外の断定をgrounding確認で拒否して再生成する", async () => {
+test("ガイドの根拠確認が続けて不合格なら安全なガイドへフォールバックする", async () => {
+  let generationCalls = 0;
+  let verificationCalls = 0;
+  const result = await supportReadingWithWorkersAI(input, {
+    AI_MODEL: "test-model",
+    AI: {
+      async run(_model, modelInput, options) {
+        if (options.tags[0].endsWith(":grounding")) {
+          verificationCalls += 1;
+          return {
+            response: {
+              grounded: false,
+              unsupportedClaims: ["value の取得元に関する断定"],
+            },
+          };
+        }
+        generationCalls += 1;
+        return { response: guide };
+      },
+    },
+  });
+  assert.ok("focusPoints" in result);
+  assert.match(result.focusPoints[0], /example/u);
+  assert.deepEqual(result.nextCandidates, []);
+  assert.equal(generationCalls, 2);
+  assert.equal(verificationCalls, 2);
+});
+
+test("ガイドのモデル呼び出し自体が失敗しても安全なガイドへフォールバックする", async () => {
+  const result = await supportReadingWithWorkersAI(input, {
+    AI_MODEL: "test-model",
+    AI: {
+      async run() {
+        throw new Error("model unavailable");
+      },
+    },
+  });
+  assert.ok("focusPoints" in result);
+  assert.match(result.focusPoints[0], /example/u);
+});
+
+test("詳しい説明の範囲外断定をgrounding確認で拒否する", async () => {
+  const detailInput = {
+    ...input,
+    stage: "detailed_explanation",
+  } satisfies ReadingSupportInput;
   let generationCalls = 0;
   let verificationCalls = 0;
   await assert.rejects(
-    supportReadingWithWorkersAI(input, {
+    supportReadingWithWorkersAI(detailInput, {
       AI_MODEL: "test-model",
       AI: {
         async run(_model, _modelInput, options) {
-          if (options.tags[0].endsWith(":grounding-check")) {
+          if (options.tags[0].endsWith(":grounding")) {
             verificationCalls += 1;
             return {
               response: {
@@ -117,8 +158,8 @@ test("範囲外の断定をgrounding確認で拒否して再生成する", async
           generationCalls += 1;
           return {
             response: {
-              ...guide,
-              checks: ["value は必ず認証済みデータベース由来です。"],
+              detailedExplanation:
+                "example の value は必ず認証済みデータベース由来です。",
             },
           };
         },
@@ -130,15 +171,19 @@ test("範囲外の断定をgrounding確認で拒否して再生成する", async
   assert.equal(verificationCalls, 2);
 });
 
-test("grounding確認で拒否された初回出力を1回再生成して回復する", async () => {
+test("詳しい説明はgrounding確認後に1回再生成して回復する", async () => {
+  const detailInput = {
+    ...input,
+    stage: "detailed_explanation",
+  } satisfies ReadingSupportInput;
   let generationCalls = 0;
   let verificationCalls = 0;
   let retryPrompt = "";
-  const result = await supportReadingWithWorkersAI(input, {
+  const result = await supportReadingWithWorkersAI(detailInput, {
     AI_MODEL: "test-model",
     AI: {
       async run(_model, modelInput, options) {
-        if (options.tags[0].endsWith(":grounding-check")) {
+        if (options.tags[0].endsWith(":grounding")) {
           verificationCalls += 1;
           return {
             response:
@@ -158,15 +203,20 @@ test("grounding確認で拒否された初回出力を1回再生成して回復�
           response:
             generationCalls === 1
               ? {
-                  ...guide,
-                  checks: ["value は必ず外部APIから取得されます。"],
+                  detailedExplanation:
+                    "example の value は必ず外部APIから取得されます。",
                 }
-              : guide,
+              : {
+                  detailedExplanation:
+                    "example は value.strip() の結果を返します。",
+                },
         };
       },
     },
   });
-  assert.deepEqual(result, guide);
+  assert.deepEqual(result, {
+    detailedExplanation: "example は value.strip() の結果を返します。",
+  });
   assert.equal(generationCalls, 2);
   assert.equal(verificationCalls, 2);
   assert.match(retryPrompt, /前回の出力はSchemaまたは検証規則/u);
@@ -176,7 +226,6 @@ test("Unicode識別子を根拠として境界付きで照合する", async () =
   const unicodeInput = {
     ...input,
     code: "def 正規化(値):\n    return 値.strip()",
-    question: "値 の流れを知りたい",
   };
   const unicodeGuide = {
     focusPoints: ["正規化 と 値 の流れに注目します。"],
@@ -190,7 +239,7 @@ test("Unicode識別子を根拠として境界付きで照合する", async () =
     AI: {
       async run(_model, _modelInput, options) {
         return {
-          response: options.tags[0].endsWith(":grounding-check")
+          response: options.tags[0].endsWith(":grounding")
             ? groundedVerification
             : unicodeGuide,
         };
@@ -200,54 +249,78 @@ test("Unicode識別子を根拠として境界付きで照合する", async () =
   assert.deepEqual(result, unicodeGuide);
 });
 
-test("1文字識別子の部分文字列だけでは根拠として扱わない", async () => {
+test("1文字識別子の部分文字列だけなら安全なガイドへフォールバックする", async () => {
   const shortInput = {
     ...input,
     code: "a = 1",
-    question: "a を確認したい",
   };
-  await assert.rejects(
-    supportReadingWithWorkersAI(shortInput, {
-      AI_MODEL: "test-model",
-      AI: {
-        async run() {
-          return {
-            response: {
-              focusPoints: ["database を確認します。"],
-              checks: ["database を確認します。"],
-              questions: ["database とは何ですか？"],
-              hints: ["database を追います。"],
-              nextCandidates: [],
-            },
-          };
-        },
-      },
-    }),
-    ModelResponseError,
-  );
-});
-
-test("詳しい説明は明示された段階でだけ専用形式を要求する", async () => {
-  const detailInput = {
-    ...input,
-    stage: "detailed_explanation",
-  } satisfies ReadingSupportInput;
-  const result = await supportReadingWithWorkersAI(detailInput, {
+  const result = await supportReadingWithWorkersAI(shortInput, {
     AI_MODEL: "test-model",
     AI: {
-      async run(_model, _modelInput, options) {
-        if (options.tags[0].endsWith(":grounding-check")) {
-          return { response: groundedVerification };
-        }
+      async run() {
         return {
           response: {
-            detailedExplanation:
-              "example は value.strip() の結果を返します。型は候補コードからは確認できません。",
+            focusPoints: ["database を確認します。"],
+            checks: ["database を確認します。"],
+            questions: ["database とは何ですか？"],
+            hints: ["database を追います。"],
+            nextCandidates: [],
           },
         };
       },
     },
   });
+  assert.ok("focusPoints" in result);
+  assert.match(result.focusPoints[0], /a/u);
+});
+
+test("詳しい説明は通常テキストを検証して専用形式へ変換する", async () => {
+  const detailInput = {
+    ...input,
+    stage: "detailed_explanation",
+  } satisfies ReadingSupportInput;
+  let generationResponseFormat;
+  const result = await supportReadingWithWorkersAI(detailInput, {
+    AI_MODEL: "test-model",
+    AI: {
+      async run(_model, modelInput, options) {
+        if (options.tags[0].endsWith(":grounding")) {
+          return { response: groundedVerification };
+        }
+        generationResponseFormat = modelInput.response_format;
+        return {
+          response:
+            "example は value.strip() の結果を返します。型は対象コードからは確認できません。",
+        };
+      },
+    },
+  });
   assert.ok("detailedExplanation" in result);
-  assert.match(result.detailedExplanation, /候補コードからは確認できません/u);
+  assert.match(result.detailedExplanation, /対象コードからは確認できません/u);
+  assert.equal(generationResponseFormat, undefined);
+});
+
+test("根拠確認はproviderのSchema強制に依存せずアプリ側で検証する", async () => {
+  const detailInput = {
+    ...input,
+    stage: "detailed_explanation",
+  } satisfies ReadingSupportInput;
+  let groundingResponseFormat;
+  await supportReadingWithWorkersAI(detailInput, {
+    AI_MODEL: "test-model",
+    AI: {
+      async run(_model, modelInput, options) {
+        if (options.tags[0].endsWith(":grounding")) {
+          groundingResponseFormat = modelInput.response_format;
+          return { response: groundedVerification };
+        }
+        return {
+          response: {
+            detailedExplanation: "example は value.strip() の結果を返します。",
+          },
+        };
+      },
+    },
+  });
+  assert.deepEqual(groundingResponseFormat, { type: "json_object" });
 });

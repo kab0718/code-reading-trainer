@@ -75,7 +75,7 @@ async function requestJson(
 
   const response = await fetch(endpoint, {
     method: "POST",
-    signal: AbortSignal.timeout(40_000),
+    signal: AbortSignal.timeout(70_000),
     headers,
     body,
   });

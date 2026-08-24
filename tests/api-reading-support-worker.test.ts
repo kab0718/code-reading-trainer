@@ -34,7 +34,6 @@ const input = {
   language: "python",
   sourceUrl: "https://github.com/example/repo/blob/main/example.py",
   code: "def example(value):\n    return value.strip()",
-  question: "value の流れを理解したい",
   stage: "guide",
 };
 const guide = {
@@ -94,33 +93,33 @@ test("専用エンドポイントでガイド契約を返す", async () => {
   assert.equal(body.detailedExplanation, null);
 });
 
-test("質問の空入力・上限・未知フィールドを外部処理前に拒否する", async () => {
+test("コードの空入力・上限・未知フィールドを外部処理前に拒否する", async () => {
   let called = false;
   const response = await worker({
     supportReading: async () => {
       called = true;
       return guide;
     },
-  }).fetch(request({ ...input, question: " ", unknown: true }), env());
+  }).fetch(request({ ...input, code: " ", unknown: true }), env());
   assert.equal(response.status, 400);
   const body = await response.json();
   assert.equal(validateError(body), true, ajv.errorsText(validateError.errors));
   assert.deepEqual(body.error.details.map(({ field }) => field).sort(), [
-    "question",
+    "code",
     "unknown",
   ]);
   assert.equal(called, false);
 
   const overLimitResponse = await worker().fetch(
-    request({ ...input, question: "あ".repeat(2_001) }),
+    request({ ...input, code: "a".repeat(30_001) }),
     env(),
   );
   assert.equal(overLimitResponse.status, 400);
   const overLimitBody = await overLimitResponse.json();
-  assert.equal(overLimitBody.error.details[0].field, "question");
+  assert.equal(overLimitBody.error.details[0].field, "code");
 
   const atLimitResponse = await worker().fetch(
-    request({ ...input, question: "あ".repeat(2_000) }),
+    request({ ...input, code: "a".repeat(30_000) }),
     env(),
   );
   assert.equal(atLimitResponse.status, 200);
@@ -163,7 +162,7 @@ test("読解サポートのモデル障害とタイムアウトを専用コー�
         ajv.errorsText(validateError.errors),
       );
       assert.equal(body.error.code, code);
-      assert.equal(JSON.stringify(body).includes(input.question), false);
+      assert.equal(JSON.stringify(body).includes(input.code), false);
     });
   }
 });
