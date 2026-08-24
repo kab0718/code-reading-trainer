@@ -87,7 +87,7 @@ test("再試行可否とRetry-Afterの規則に反するエラーを拒否する
       error: {
         ...error.error,
         details: Array.from({ length: 21 }, () => ({
-          field: "question",
+          field: "code",
           reason: "入力を確認してください。",
         })),
       },

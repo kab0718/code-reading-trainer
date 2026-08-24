@@ -5,7 +5,6 @@ export type ReadingSupportStage = "guide" | "detailed_explanation";
 export interface ReadingSupportInput {
   code: string;
   language: "python";
-  question: string;
   sourceUrl: string;
   stage: ReadingSupportStage;
 }

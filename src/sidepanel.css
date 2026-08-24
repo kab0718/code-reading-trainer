@@ -316,6 +316,18 @@ textarea[aria-invalid="true"] {
   color: #8c2929;
 }
 
+.input-error:empty {
+  display: none;
+}
+
+.input-error:not(:empty) {
+  padding: 10px 12px;
+  border: 1px solid #d9aaaa;
+  border-radius: 8px;
+  background: #fff1f1;
+  font-weight: 600;
+}
+
 .one-attempt-note {
   margin: 12px 0 0;
   padding: 10px 12px;

@@ -115,7 +115,7 @@ async function requestEvaluation(
 ): Promise<EvaluationResponse> {
   const response = await fetch(endpoint, {
     method: "POST",
-    signal: AbortSignal.timeout(40_000),
+    signal: AbortSignal.timeout(70_000),
     headers: {
       "Content-Type": "application/json",
       Origin: origin,

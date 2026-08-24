@@ -173,7 +173,6 @@ function readingMessage(overrides = {}) {
       language: "python",
       sourceUrl: "https://github.com/example/project/blob/main/example.py",
       code: "return value",
-      question: "value の流れを理解したい",
       stage: "guide",
       ...overrides,
     },
@@ -380,7 +379,7 @@ test("契約に適合しない成功レスポンスを表示しない", async ()
   assert.equal(response.error.code, "INVALID_API_RESPONSE");
 });
 
-test("36秒で評価API通信を中断し、再試行可能なエラーを返す", async () => {
+test("70秒で評価API通信を中断し、再試行可能なエラーを返す", async () => {
   let timeoutDelay;
   const environment = createBackgroundEnvironment({
     configuredUrl: apiUrl,
@@ -398,14 +397,14 @@ test("36秒で評価API通信を中断し、再試行可能なエラーを返す
   });
 
   const response = await environment.send(evaluationMessage()).response;
-  assert.equal(timeoutDelay, 36_000);
+  assert.equal(timeoutDelay, 70_000);
   assert.equal(response.ok, false);
   assert.equal(response.error.code, "EVALUATION_TIMEOUT");
   assert.equal(response.error.retryable, true);
   assert.equal(environment.fetchCalls.length, 1);
 });
 
-test("レスポンス本文の読み取りも36秒で中断する", async () => {
+test("レスポンス本文の読み取りも70秒で中断する", async () => {
   let fireTimeout;
   const environment = createBackgroundEnvironment({
     configuredUrl: apiUrl,
@@ -477,10 +476,9 @@ test("読解サポートは専用URLへ専用リクエストをPOSTする", asyn
   );
 });
 
-test("読解サポートの空質問は外部送信前に拒否する", async () => {
+test("読解サポートの空コードは外部送信前に拒否する", async () => {
   const environment = createBackgroundEnvironment({ configuredUrl: apiUrl });
-  const result = await environment.send(readingMessage({ question: " " }))
-    .response;
+  const result = await environment.send(readingMessage({ code: " " })).response;
   assert.equal(result.ok, false);
   assert.equal(result.error.code, "VALIDATION_ERROR");
   assert.equal(environment.fetchCalls.length, 0);

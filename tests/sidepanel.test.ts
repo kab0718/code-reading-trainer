@@ -225,10 +225,6 @@ function createSidepanelEnvironment({
     "#new-training-button": createElement("#new-training-button", {
       disabled: false,
     }),
-    "#reading-question": createElement("#reading-question", { value: "" }),
-    "#reading-question-count": createElement("#reading-question-count", {
-      textContent: "",
-    }),
     "#reading-input-error": createElement("#reading-input-error", {
       textContent: "",
     }),
@@ -378,10 +374,6 @@ function createSidepanelEnvironment({
     },
     chooseTrainingMode() {
       return listeners.get("#training-mode-button:click")();
-    },
-    inputReadingQuestion(value) {
-      elements["#reading-question"].value = value;
-      listeners.get("#reading-question:input")();
     },
     requestReadingGuide() {
       return listeners.get("#reading-submit-button:click")();
@@ -576,7 +568,7 @@ test("採点結果から新しいトレーニングを開始できる", () => {
   assert.match(sidepanelHtmlSource, /新しいトレーニングを始める/u);
 });
 
-test("選択コードでトレーニングと読解サポートを切り替え、入力を分離する", async () => {
+test("選択コードだけで読解サポートを開始できる", async () => {
   const environment = createSidepanelEnvironment();
   await flushPromises();
   await environment.select("return value");
@@ -585,15 +577,12 @@ test("選択コードでトレーニングと読解サポートを切り替え�
   environment.chooseReadingMode();
   assert.equal(environment.elements["#training-input"].hidden, true);
   assert.equal(environment.elements["#reading-input"].hidden, false);
-  environment.inputReadingQuestion("value の由来を確認したい");
   assert.equal(environment.elements["#reading-submit-button"].disabled, false);
+  assert.doesNotMatch(sidepanelHtmlSource, /id="reading-question"/u);
+  assert.doesNotMatch(sidepanelHtmlSource, /分からない点または調査目的/u);
 
   environment.chooseTrainingMode();
   assert.equal(environment.elements["#explanation"].value, "値を返します。");
-  assert.equal(
-    environment.elements["#reading-question"].value,
-    "value の由来を確認したい",
-  );
   assert.equal(environment.elements["#reading-result"].hidden, true);
 });
 
@@ -602,7 +591,6 @@ test("最初は着眼点・確認事項・質問・ヒントを表示し詳し�
   await flushPromises();
   await environment.select("return value");
   environment.chooseReadingMode();
-  environment.inputReadingQuestion("value の流れを理解したい");
   environment.requestReadingGuide();
   await flushPromises();
 
@@ -612,6 +600,7 @@ test("最初は着眼点・確認事項・質問・ヒントを表示し詳し�
     "REQUEST_READING_SUPPORT",
   );
   assert.equal(environment.evaluationMessages[0].request.stage, "guide");
+  assert.equal("question" in environment.evaluationMessages[0].request, false);
   assert.equal(environment.elements["#selection"].hidden, true);
   assert.equal(environment.elements["#reading-result"].hidden, false);
   assert.match(
@@ -635,7 +624,6 @@ test("明示操作後だけ詳しい説明を追加取得して表示する", as
   await flushPromises();
   await environment.select("return value");
   environment.chooseReadingMode();
-  environment.inputReadingQuestion("value の流れを理解したい");
   environment.requestReadingGuide();
   await flushPromises();
   assert.equal(environment.evaluationMessages.length, 1);
@@ -657,13 +645,11 @@ test("明示操作後だけ詳しい説明を追加取得して表示する", as
   );
 });
 
-test("読解サポートのAPIエラーでも質問を保持して再試行できる", async () => {
+test("読解サポートのAPIエラーでも選択コードを保持して再試行できる", async () => {
   const environment = createSidepanelEnvironment();
   await flushPromises();
   await environment.select("return value");
   environment.chooseReadingMode();
-  const question = "value の流れを理解したい";
-  environment.inputReadingQuestion(question);
   let calls = 0;
   environment.setReadingHandler(async (message) => {
     calls += 1;
@@ -685,8 +671,15 @@ test("読解サポートのAPIエラーでも質問を保持して再試行で�
   });
   environment.requestReadingGuide();
   await flushPromises();
-  assert.equal(environment.elements["#reading-question"].value, question);
+  assert.equal(
+    environment.elements["#selected-code"].textContent,
+    "return value",
+  );
   assert.equal(environment.elements["#reading-submit-button"].disabled, false);
+  assert.match(
+    environment.elements["#reading-input-error"].textContent,
+    /ガイドを作成できません/u,
+  );
   assert.match(environment.elements["#status"].textContent, /保持/u);
 
   environment.requestReadingGuide();
@@ -700,7 +693,6 @@ test("読解エラーはモード切替と同一ページ更新後も理由を�
   await flushPromises();
   await environment.select("return value");
   environment.chooseReadingMode();
-  environment.inputReadingQuestion("value を確認したい");
   environment.setReadingHandler(async () => ({
     ok: false,
     error: {
@@ -728,7 +720,6 @@ test("詳しい説明の回数制限中は期限まで再試行ボタンを無�
   await flushPromises();
   await environment.select("return value");
   environment.chooseReadingMode();
-  environment.inputReadingQuestion("value を確認したい");
   environment.requestReadingGuide();
   await flushPromises();
   environment.setReadingHandler(async () => ({
@@ -759,7 +750,6 @@ test("ページ遷移後に届いた読解の回数制限も新しい入力を�
   await flushPromises();
   await environment.select("return old_value");
   environment.chooseReadingMode();
-  environment.inputReadingQuestion("old_value を確認したい");
   let finishReading;
   environment.setReadingHandler(
     () =>
@@ -774,7 +764,6 @@ test("ページ遷移後に届いた読解の回数制限も新しい入力を�
   await flushPromises();
   await environment.select("return new_value");
   environment.chooseReadingMode();
-  environment.inputReadingQuestion("new_value を確認したい");
   assert.equal(environment.elements["#reading-submit-button"].disabled, false);
 
   finishReading({
@@ -793,14 +782,12 @@ test("ページ遷移後に届いた読解の回数制限も新しい入力を�
   assert.equal(environment.elements["#reading-submit-button"].disabled, false);
 });
 
-test("読解サポートの計測イベントにコード・質問本文を保存しない", async () => {
+test("読解サポートの計測イベントにコード本文を保存しない", async () => {
   const environment = createSidepanelEnvironment();
   await flushPromises();
   const code = "return sensitive_code";
-  const question = "sensitive_question を確認したい";
   await environment.select(code);
   environment.chooseReadingMode();
-  environment.inputReadingQuestion(question);
   environment.requestReadingGuide();
   await flushPromises();
   environment.requestDetail();
@@ -813,7 +800,6 @@ test("読解サポートの計測イベントにコード・質問本文を保�
   }>;
   const serialized = JSON.stringify(events);
   assert.doesNotMatch(serialized, /sensitive_code/u);
-  assert.doesNotMatch(serialized, /sensitive_question/u);
   assert.deepEqual(JSON.parse(JSON.stringify(events.map(({ name }) => name))), [
     "reading_support_started",
     "reading_support_guide_displayed",
@@ -1060,6 +1046,30 @@ test("APIエラー時は回答を保持し、手動で再送信できる", async
 
   await environment.submit().completion;
   assert.equal(environment.evaluationMessages.length, 2);
+});
+
+test("詳細のない採点エラーを回答欄の近くにも表示する", async () => {
+  const environment = createSidepanelEnvironment();
+  await flushPromises();
+  await environment.select("print('hello')");
+  environment.inputExplanation("helloと表示します。");
+  environment.setEvaluationHandler(async () => ({
+    ok: false,
+    error: {
+      code: "EVALUATION_TIMEOUT",
+      details: [],
+      message: "評価処理がタイムアウトしました。再試行してください。",
+      retryable: true,
+    },
+  }));
+
+  await environment.submit().completion;
+
+  assert.match(
+    environment.elements["#input-error"].textContent,
+    /タイムアウト/u,
+  );
+  assert.equal(environment.elements["#evaluation-button"].disabled, false);
 });
 
 test("回数制限の待機中は回答を編集しても期限まで再送信できない", async () => {

@@ -4,7 +4,7 @@
   "title": "ReadingSupportRequestV1",
   "type": "object",
   "additionalProperties": false,
-  "required": ["language", "sourceUrl", "code", "question", "stage"],
+  "required": ["language", "sourceUrl", "code", "stage"],
   "properties": {
     "language": { "const": "python" },
     "sourceUrl": {
@@ -14,7 +14,6 @@
       "pattern": "^https://github\\.com/[^/]+/[^/]+/blob/.+\\.py(?:[?#].*)?$"
     },
     "code": { "type": "string", "minLength": 1, "maxLength": 30000 },
-    "question": { "type": "string", "minLength": 1, "maxLength": 2000 },
     "stage": { "enum": ["guide", "detailed_explanation"] }
   }
 }
