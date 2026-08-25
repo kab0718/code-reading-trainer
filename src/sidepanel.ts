@@ -10,13 +10,16 @@
   const statusElement = requireElement<HTMLElement>("#status");
   const trainingMethodsElement =
     requireElement<HTMLElement>("#training-methods");
-  const recommendationButton = requireElement<HTMLButtonElement>(
-    "#recommendation-button",
+  const candidateRetryButton = requireElement<HTMLButtonElement>(
+    "#candidate-retry-button",
   );
   const candidateSection = requireElement<HTMLElement>("#candidate-section");
   const candidateStatus = requireElement<HTMLElement>("#candidate-status");
   const candidateList = requireElement<HTMLElement>("#candidate-list");
   const sessionSection = requireElement<HTMLFormElement>("#training-session");
+  const changeCandidateButton = requireElement<HTMLButtonElement>(
+    "#change-candidate-button",
+  );
   const selectedCodeElement = requireElement<HTMLElement>("#selected-code");
   const trainingInputElement = requireElement<HTMLElement>("#training-input");
   const readingInputElement = requireElement<HTMLElement>("#reading-input");
@@ -33,8 +36,16 @@
   const inputErrorElement = requireElement<HTMLElement>("#input-error");
   const evaluationButton =
     requireElement<HTMLButtonElement>("#evaluation-button");
+  const evaluationStatusElement =
+    requireElement<HTMLElement>("#evaluation-status");
   const evaluationResultElement =
     requireElement<HTMLElement>("#evaluation-result");
+  const evaluationResultTitle = requireElement<HTMLElement>(
+    "#evaluation-result-title",
+  );
+  const evaluationResultStatus = requireElement<HTMLElement>(
+    "#evaluation-result-status",
+  );
   const totalScoreElement = requireElement<HTMLElement>("#total-score-value");
   const criteriaListElement =
     requireElement<HTMLUListElement>("#criteria-list");
@@ -49,10 +60,17 @@
   const readingInputErrorElement = requireElement<HTMLElement>(
     "#reading-input-error",
   );
-  const readingSubmitButton = requireElement<HTMLButtonElement>(
-    "#reading-submit-button",
+  const readingStatusElement = requireElement<HTMLElement>("#reading-status");
+  const readingRetryButton = requireElement<HTMLButtonElement>(
+    "#reading-retry-button",
   );
   const readingResultElement = requireElement<HTMLElement>("#reading-result");
+  const readingResultTitle = requireElement<HTMLElement>(
+    "#reading-result-title",
+  );
+  const readingResultStatus = requireElement<HTMLElement>(
+    "#reading-result-status",
+  );
   const focusPointsListElement =
     requireElement<HTMLUListElement>("#focus-points-list");
   const checksListElement = requireElement<HTMLUListElement>("#checks-list");
@@ -70,6 +88,8 @@
     "#reading-result-error",
   );
   const detailButton = requireElement<HTMLButtonElement>("#detail-button");
+  const detailStatusElement = requireElement<HTMLElement>("#detail-status");
+  const detailErrorElement = requireElement<HTMLElement>("#detail-error");
   const detailedExplanationBlockElement = requireElement<HTMLElement>(
     "#detailed-explanation-block",
   );
@@ -78,6 +98,9 @@
   );
   const completeReadingButton = requireElement<HTMLButtonElement>(
     "#complete-reading-button",
+  );
+  const readingChangeCandidateButton = requireElement<HTMLButtonElement>(
+    "#reading-change-candidate-button",
   );
 
   const inputValidation = globalThis.CodeReadingTrainerInputValidation;
@@ -105,9 +128,17 @@
     });
   let activePageKey: string | null = null;
   let activeCandidateContextKey: string | null = null;
+  const CANDIDATE_CACHE_LIMIT = 12;
+  const candidateCache = new Map<string, TrainingCandidate[]>();
+  let candidateLoadingRequest: {
+    contextKey: string;
+    requestAttempt: number;
+  } | null = null;
   let candidateRequestAttempt = 0;
   let selectedSourceUrl: string | null = null;
+  let selectedCandidateId: string | null = null;
   let evaluationState: EvaluationUiState = { status: "editing" };
+  let explanationTouched = false;
   let evaluationAttempt = 0;
   let pageContextAttempt = 0;
   let retryAfterUntil: number | null = null;
@@ -218,21 +249,34 @@
     readingStatusMessage = null;
     selectedMode = "training";
     selectedSourceUrl = null;
+    selectedCandidateId = null;
     candidateRequestAttempt += 1;
     activeCandidateContextKey = null;
     candidateSection.hidden = true;
     candidateStatus.textContent = "";
     candidateList.replaceChildren();
-    recommendationButton.disabled = activePageKey === null;
+    candidateRetryButton.hidden = true;
+    candidateRetryButton.disabled = activePageKey === null;
     selectedCodeElement.textContent = "";
     explanationElement.value = "";
+    explanationTouched = false;
     explanationElement.readOnly = false;
     explanationElement.setAttribute("aria-invalid", "false");
     explanationCountElement.textContent = `0 / ${inputValidation.INPUT_LIMITS.explanation.toLocaleString("ja-JP")}文字`;
     inputErrorElement.textContent = "";
     readingInputErrorElement.textContent = "";
-    readingSubmitButton.disabled = true;
-    readingSubmitButton.textContent = "読むためのガイドを受け取る";
+    evaluationStatusElement.textContent = "";
+    evaluationResultStatus.textContent = "";
+    readingStatusElement.textContent = "";
+    readingResultStatus.textContent = "";
+    detailStatusElement.textContent = "";
+    detailErrorElement.textContent = "";
+    readingRetryButton.hidden = true;
+    readingRetryButton.disabled = true;
+    readingModeButton.disabled = false;
+    trainingInputElement.setAttribute("aria-busy", "false");
+    readingInputElement.setAttribute("aria-busy", "false");
+    readingResultElement.setAttribute("aria-busy", "false");
     trainingInputElement.hidden = false;
     readingInputElement.hidden = true;
     trainingModeButton.className = "mode-button is-selected";
@@ -257,6 +301,7 @@
     hintsListElement.replaceChildren();
     nextCandidatesListElement.replaceChildren();
     readingResultErrorElement.textContent = "";
+    readingRetryButton.hidden = true;
     detailedExplanationBlockElement.hidden = true;
     detailedExplanationElement.textContent = "";
     detailButton.disabled = false;
@@ -285,14 +330,17 @@
       readingStartedRecorded = true;
       recordReadingEvent("reading_support_started");
     }
-    statusElement.textContent = training
-      ? evaluationState.status === "error"
-        ? evaluationState.message
-        : "対象コードを読み、自分の言葉で説明してみましょう。"
-      : (readingStatusMessage ??
-        "対象コードから、模範解答に必要な観点をガイドとして整理します。");
+    if (training) {
+      readingStatusElement.textContent = "";
+      explanationElement.focus();
+    } else if (readingStatusMessage) {
+      readingStatusElement.textContent = readingStatusMessage;
+    }
     updateInputValidation();
     updateReadingInputValidation();
+    if (!training && readingGuide === null) {
+      void requestReadingSupport("guide");
+    }
   }
 
   function updateReadingInputValidation(): ReadingSupportInputValidation {
@@ -303,7 +351,7 @@
       validation.codeError ?? readingApiInputError ?? "";
     const retryWaiting =
       retryAfterUntil !== null && retryAfterUntil > Date.now();
-    readingSubmitButton.disabled =
+    readingRetryButton.disabled =
       !validation.valid ||
       readingSubmitting ||
       retryWaiting ||
@@ -336,6 +384,10 @@
       nextCandidatesListElement.append(item);
     }
     readingResultErrorElement.textContent = "";
+    detailErrorElement.textContent = "";
+    readingStatusElement.textContent = "";
+    readingResultStatus.textContent = "ガイドを作成しました。";
+    readingRetryButton.hidden = true;
     detailedExplanationBlockElement.hidden = true;
     detailedExplanationElement.textContent = "";
     detailButton.disabled = false;
@@ -344,6 +396,8 @@
     sessionSection.hidden = true;
     evaluationResultElement.hidden = true;
     readingResultElement.hidden = false;
+    readingResultTitle.focus();
+    readingResultTitle.scrollIntoView({ block: "start" });
   }
 
   async function requestReadingSupport(
@@ -352,6 +406,7 @@
     if (
       readingSubmitting ||
       !selectedSourceUrl ||
+      !readingRetryable ||
       (retryAfterUntil !== null && retryAfterUntil > Date.now()) ||
       !updateReadingInputValidation().valid
     ) {
@@ -367,14 +422,22 @@
     readingSubmitting = true;
     readingApiInputError = null;
     readingRetryable = true;
-    readingResultErrorElement.textContent = "";
     if (stage === "guide") {
-      readingSubmitButton.textContent = "ガイドを作成中…";
-      statusElement.textContent = "読むためのガイドを作成しています…";
+      readingResultErrorElement.textContent = "";
+    } else {
+      detailErrorElement.textContent = "";
+    }
+    if (stage === "guide") {
+      readingStatusElement.textContent = "読むためのガイドを作成しています…";
+      readingRetryButton.hidden = true;
+      readingModeButton.disabled = true;
+      readingInputElement.setAttribute("aria-busy", "true");
     } else {
       detailButton.disabled = true;
       detailButton.textContent = "詳しい説明を作成中…";
-      statusElement.textContent = "対象コードの詳しい説明を作成しています…";
+      detailStatusElement.textContent =
+        "対象コードの詳しい説明を作成しています…";
+      readingResultElement.setAttribute("aria-busy", "true");
     }
     updateReadingInputValidation();
 
@@ -404,9 +467,12 @@
       }
       if (attempt !== readingAttempt) return;
       if ("error" in result) {
-        readingResultErrorElement.textContent = result.error.message;
+        if (stage === "guide") {
+          readingResultErrorElement.textContent = result.error.message;
+        } else {
+          detailErrorElement.textContent = result.error.message;
+        }
         readingStatusMessage = `${result.error.message} 対象コードは保持されています。`;
-        statusElement.textContent = readingStatusMessage;
         if (stage === "guide") {
           const detailsMessage =
             result.error.details
@@ -414,12 +480,17 @@
               .join("\n") ?? "";
           readingApiInputError = detailsMessage || result.error.message;
           readingRetryable = result.error.retryable;
+          readingStatusElement.textContent = "";
+          readingRetryButton.hidden = !result.error.retryable;
         } else if (!result.error.retryable) {
           readingRetryable = false;
           detailButton.disabled = true;
           detailButton.textContent = "詳しい説明を取得できません";
         } else if (result.error.code === "RATE_LIMITED") {
           detailButton.textContent = "再試行できるまで待機中…";
+        }
+        if (stage === "detailed_explanation") {
+          detailStatusElement.textContent = "";
         }
         return;
       }
@@ -433,8 +504,6 @@
         readingGuide = response;
         renderReadingGuide(response);
         recordReadingEvent("reading_support_guide_displayed", "guide");
-        statusElement.textContent =
-          "まず着眼点とヒントを使って、自分でコードを読み進めてみましょう。";
       } else {
         detailedExplanationElement.textContent = response.detailedExplanation;
         detailedExplanationBlockElement.hidden = false;
@@ -444,21 +513,33 @@
           "reading_support_detail_displayed",
           "detailed_explanation",
         );
-        statusElement.textContent = "詳しい説明を表示しました。";
+        detailStatusElement.textContent = "詳しい説明を表示しました。";
+        detailedExplanationBlockElement.scrollIntoView({ block: "start" });
       }
     } catch {
       const message =
         stage === "guide"
           ? "読解サポートを開始できませんでした。対象コードは保持されています。もう一度お試しください。"
           : "詳しい説明を取得できませんでした。もう一度お試しください。";
-      readingResultErrorElement.textContent = message;
+      if (stage === "guide") {
+        readingResultErrorElement.textContent = message;
+      } else {
+        detailErrorElement.textContent = message;
+      }
       if (stage === "guide") readingApiInputError = message;
       readingStatusMessage = message;
-      statusElement.textContent = message;
+      if (stage === "guide") {
+        readingStatusElement.textContent = "";
+        readingRetryButton.hidden = false;
+      } else {
+        detailStatusElement.textContent = "";
+      }
     } finally {
       if (attempt === readingAttempt) {
         readingSubmitting = false;
-        readingSubmitButton.textContent = "読むためのガイドを受け取る";
+        readingModeButton.disabled = false;
+        readingInputElement.setAttribute("aria-busy", "false");
+        readingResultElement.setAttribute("aria-busy", "false");
         if (
           stage === "detailed_explanation" &&
           !detailedExplanationElement.textContent &&
@@ -543,6 +624,8 @@
     trainingMethodsElement.hidden = true;
     sessionSection.hidden = true;
     evaluationResultElement.hidden = false;
+    evaluationResultTitle.focus();
+    evaluationResultTitle.scrollIntoView({ block: "start" });
   }
 
   function updateInputValidation(): TrainingInputValidation {
@@ -556,8 +639,11 @@
       evaluationState.status === "error"
         ? (evaluationState.inputError ?? evaluationState.message)
         : null;
+    const visibleExplanationError = explanationTouched
+      ? validation.explanationError
+      : null;
     const explanationInvalid =
-      validation.explanationError !== null ||
+      visibleExplanationError !== null ||
       (evaluationState.status === "error" &&
         evaluationState.explanationInvalid);
     explanationElement.setAttribute(
@@ -565,10 +651,7 @@
       explanationInvalid ? "true" : "false",
     );
     inputErrorElement.textContent =
-      validation.codeError ??
-      validation.explanationError ??
-      apiInputError ??
-      "";
+      validation.codeError ?? visibleExplanationError ?? apiInputError ?? "";
     const retryWaiting =
       retryAfterUntil !== null && retryAfterUntil > Date.now();
     evaluationButton.disabled =
@@ -586,16 +669,21 @@
     if (nextState.status === "editing") {
       explanationElement.readOnly = false;
       evaluationButton.textContent = "評価する";
+      evaluationStatusElement.textContent = "";
+      trainingInputElement.setAttribute("aria-busy", "false");
     } else if (nextState.status === "submitting") {
       explanationElement.readOnly = true;
       evaluationButton.textContent = "評価中…";
-      statusElement.textContent =
+      evaluationStatusElement.textContent =
         "回答を評価しています。このまましばらくお待ちください。";
+      trainingInputElement.setAttribute("aria-busy", "true");
     } else if (nextState.status === "completed") {
       explanationElement.readOnly = true;
       evaluationButton.textContent = "評価済み";
       newTrainingButton.disabled = false;
-      statusElement.textContent = `採点が完了しました（${nextState.response.totalScore} / 100点）。`;
+      evaluationStatusElement.textContent = "";
+      evaluationResultStatus.textContent = `採点が完了しました（${nextState.response.totalScore} / 100点）。`;
+      trainingInputElement.setAttribute("aria-busy", "false");
       renderEvaluationResult(nextState.response, nextState.answer);
     } else {
       if (
@@ -608,7 +696,8 @@
       evaluationButton.textContent = nextState.retryable
         ? "もう一度評価する"
         : "評価できません";
-      statusElement.textContent = nextState.message;
+      evaluationStatusElement.textContent = "";
+      trainingInputElement.setAttribute("aria-busy", "false");
     }
 
     updateInputValidation();
@@ -627,8 +716,6 @@
           context.path,
         ])
       : null;
-    recommendationButton.disabled = !isEligible || !context.commitOid;
-
     if (isEligible) {
       if (
         !sessionAlreadyReset &&
@@ -641,16 +728,8 @@
       activeCandidateContextKey = context.commitOid
         ? JSON.stringify([context.repository, context.commitOid, context.path])
         : null;
-      if (
-        evaluationState.status === "editing" &&
-        !readingSubmitting &&
-        readingGuide === null
-      ) {
-        statusElement.textContent =
-          selectedMode === "reading_support" && readingStatusMessage
-            ? readingStatusMessage
-            : `${context.repository} の ${context.path}（${context.ref}）でトレーニングできます。`;
-      }
+      candidateRetryButton.disabled = !context.commitOid;
+      statusElement.textContent = `${context.repository} の ${context.path}（${context.ref}）を表示しています。`;
       return;
     }
 
@@ -659,7 +738,7 @@
     }
     activePageKey = null;
     activeCandidateContextKey = null;
-    recommendationButton.disabled = true;
+    candidateRetryButton.disabled = true;
     statusElement.textContent =
       unsupportedMessages[context.reason] ??
       "このページはトレーニング対象外です。";
@@ -675,15 +754,17 @@
 
   async function updateStatus(sessionAlreadyReset = false): Promise<void> {
     const attempt = ++pageContextAttempt;
-    candidateRequestAttempt += 1;
-    activeCandidateContextKey = null;
-    candidateSection.hidden = true;
-    candidateStatus.textContent = "";
-    candidateList.replaceChildren();
     try {
       const context = await getPageContext();
       if (attempt !== pageContextAttempt) return;
       applyPageContext(context, sessionAlreadyReset);
+      if (
+        context.status === PAGE_STATUS.ELIGIBLE &&
+        context.commitOid &&
+        !selectedCodeElement.textContent
+      ) {
+        await loadCandidates(context);
+      }
     } catch (error) {
       if (attempt !== pageContextAttempt) return;
       if (!sessionAlreadyReset) {
@@ -691,7 +772,7 @@
       }
       activePageKey = null;
       activeCandidateContextKey = null;
-      recommendationButton.disabled = true;
+      candidateRetryButton.disabled = true;
       statusElement.textContent = getErrorMessage(error);
     }
   }
@@ -715,19 +796,35 @@
   trainingModeButton.addEventListener("click", () => setMode("training"));
   readingModeButton.addEventListener("click", () => setMode("reading_support"));
 
-  readingSubmitButton.addEventListener("click", () => {
-    if (selectedMode === "reading_support") {
-      void requestReadingSupport("guide");
+  function startTrainingWithCode(
+    candidateId: string,
+    code: string,
+    sourceUrl: string,
+  ): void {
+    if (selectedCandidateId === candidateId) {
+      setMode("training");
+      trainingMethodsElement.hidden = true;
+      candidateSection.hidden = true;
+      sessionSection.hidden = false;
+      readingResultElement.hidden = true;
+      return;
     }
-  });
-
-  function startTrainingWithCode(code: string, sourceUrl: string): void {
+    if (
+      selectedCodeElement.textContent &&
+      explanationElement.value.trim() &&
+      !globalThis.confirm(
+        "別の候補へ移ると、現在の回答下書きは破棄されます。続けますか？",
+      )
+    ) {
+      return;
+    }
     resetSession();
+    selectedCandidateId = candidateId;
     selectedCodeElement.textContent = code;
     selectedSourceUrl = sourceUrl;
     sessionSection.hidden = false;
-    statusElement.textContent =
-      "選んだ候補を読み、自分の言葉で説明してみましょう。";
+    trainingMethodsElement.hidden = true;
+    candidateSection.hidden = true;
     updateInputValidation();
     updateReadingInputValidation();
   }
@@ -751,31 +848,62 @@
       reason.textContent = candidate.reason;
       const button = document.createElement("button");
       button.type = "button";
-      button.textContent = "この候補でトレーニングする";
+      button.textContent = "この候補を読む";
       button.addEventListener("click", () =>
-        startTrainingWithCode(candidate.code, candidate.sourceUrl),
+        startTrainingWithCode(
+          candidate.id,
+          candidate.code,
+          candidate.sourceUrl,
+        ),
       );
       article.append(title, metadata, reason, button);
       candidateList.append(article);
     }
   }
 
-  recommendationButton.addEventListener("click", async () => {
+  async function loadCandidates(context?: PageContext): Promise<void> {
     if (isEvaluationLocked() || readingSubmitting) return;
-    const requestAttempt = ++candidateRequestAttempt;
-    recommendationButton.disabled = true;
-    candidateSection.hidden = false;
-    candidateList.replaceChildren();
-    candidateStatus.textContent = "現在のファイルから候補を探しています…";
+    let requestAttempt: number | null = null;
+    let loadingContextKey: string | null = null;
+    const pageContextGeneration = pageContextAttempt;
+    const shouldVerifyPageContext = context === undefined;
     try {
-      const context = await getPageContext();
-      if (requestAttempt !== candidateRequestAttempt) return;
+      context ??= await getPageContext();
+      if (
+        shouldVerifyPageContext &&
+        pageContextGeneration !== pageContextAttempt
+      )
+        return;
       if (context.status !== PAGE_STATUS.ELIGIBLE || !context.commitOid) {
         candidateStatus.textContent =
           "表示中のcommitを確認できません。ページを再読み込みするか、別のpublic Pythonファイルを開いてください。";
+        candidateRetryButton.hidden = false;
         return;
       }
       applyPageContext(context);
+      const contextKey = activeCandidateContextKey;
+      if (!contextKey) return;
+      if (
+        candidateLoadingRequest?.contextKey === contextKey &&
+        candidateLoadingRequest.requestAttempt === candidateRequestAttempt
+      )
+        return;
+      const cachedCandidates = candidateCache.get(contextKey);
+      if (cachedCandidates) {
+        candidateCache.delete(contextKey);
+        candidateCache.set(contextKey, cachedCandidates);
+        candidateStatus.textContent = `${cachedCandidates.length}件の候補が見つかりました。`;
+        renderCandidates(cachedCandidates);
+        return;
+      }
+      requestAttempt = ++candidateRequestAttempt;
+      loadingContextKey = contextKey;
+      candidateLoadingRequest = { contextKey, requestAttempt };
+      candidateRetryButton.disabled = true;
+      candidateRetryButton.hidden = true;
+      candidateSection.hidden = false;
+      candidateList.replaceChildren();
+      candidateStatus.textContent = "現在のファイルから候補を探しています…";
       const requestId = `${Date.now()}-${requestAttempt}`;
       const response = (await chrome.runtime.sendMessage({
         context,
@@ -790,40 +918,80 @@
       )
         return;
       if (response.ok === false) {
-        candidateStatus.textContent = `${response.error.message} もう一度試すか、別のpublic Pythonファイルを開いてください。`;
+        candidateStatus.textContent = response.error.message;
+        candidateRetryButton.hidden = !response.error.retryable;
         return;
       }
       if (response.candidates.length === 0) {
         candidateStatus.textContent =
           "このファイルには学習向きの候補が見つかりませんでした。別のpublic Pythonファイルを開いて、もう一度お試しください。";
+        candidateRetryButton.hidden = false;
         return;
+      }
+      candidateCache.set(contextKey, response.candidates);
+      if (candidateCache.size > CANDIDATE_CACHE_LIMIT) {
+        const oldestKey = candidateCache.keys().next().value;
+        if (oldestKey) candidateCache.delete(oldestKey);
       }
       candidateStatus.textContent = `${response.candidates.length}件の候補が見つかりました。`;
       renderCandidates(response.candidates);
     } catch {
-      if (requestAttempt !== candidateRequestAttempt) return;
-      candidateStatus.textContent =
-        "候補を取得できませんでした。もう一度試すか、別のpublic Pythonファイルを開いてください。";
+      if (requestAttempt === null || requestAttempt !== candidateRequestAttempt)
+        return;
+      candidateStatus.textContent = "候補を取得できませんでした。";
+      candidateRetryButton.hidden = false;
     } finally {
-      if (requestAttempt === candidateRequestAttempt) {
-        recommendationButton.disabled = activePageKey === null;
+      if (
+        loadingContextKey !== null &&
+        candidateLoadingRequest?.contextKey === loadingContextKey &&
+        candidateLoadingRequest.requestAttempt === requestAttempt
+      ) {
+        candidateLoadingRequest = null;
       }
+      candidateRetryButton.disabled = activePageKey === null;
     }
+  }
+
+  candidateRetryButton.addEventListener("click", () => {
+    if (activeCandidateContextKey)
+      candidateCache.delete(activeCandidateContextKey);
+    void loadCandidates();
+  });
+
+  function showCandidatePicker(): void {
+    trainingMethodsElement.hidden = false;
+    candidateSection.hidden = false;
+    sessionSection.hidden = true;
+    readingResultElement.hidden = true;
+    evaluationResultElement.hidden = true;
+    candidateSection.scrollIntoView({ block: "start" });
+  }
+
+  changeCandidateButton.addEventListener("click", showCandidatePicker);
+  readingChangeCandidateButton.addEventListener("click", showCandidatePicker);
+
+  readingRetryButton.addEventListener("click", () => {
+    if (selectedMode === "reading_support") void requestReadingSupport("guide");
   });
 
   detailButton.addEventListener("click", () => {
     if (readingGuide) void requestReadingSupport("detailed_explanation");
   });
 
-  completeReadingButton.addEventListener("click", async () => {
+  completeReadingButton.addEventListener("click", () => {
     if (!readingGuide || readingSubmitting) return;
     recordReadingEvent("reading_support_completed");
-    resetSession();
-    statusElement.textContent = "現在のGitHubページを確認しています…";
-    await updateStatus(true);
+    setMode("training");
+    sessionSection.hidden = false;
+    readingResultElement.hidden = true;
+    trainingMethodsElement.hidden = true;
+    candidateSection.hidden = true;
+    explanationElement.focus();
+    explanationElement.scrollIntoView({ block: "center" });
   });
 
   explanationElement.addEventListener("input", () => {
+    explanationTouched = true;
     if (evaluationState.status === "error") {
       if (retryAfterUntil !== null && retryAfterUntil > Date.now()) {
         evaluationState = {
@@ -840,8 +1008,14 @@
     updateInputValidation();
   });
 
+  explanationElement.addEventListener("blur", () => {
+    explanationTouched = true;
+    updateInputValidation();
+  });
+
   sessionSection.addEventListener("submit", async (event: SubmitEvent) => {
     event.preventDefault();
+    explanationTouched = true;
 
     if (
       selectedMode !== "training" ||
@@ -932,12 +1106,11 @@
           result.error.details?.some(
             (detail) => detail.field === "explanation",
           ) ?? false,
-        inputError:
-          result.error.details && result.error.details.length > 0
-            ? result.error.details
-                .map((detail) => `${detail.field}: ${detail.reason}`)
-                .join("\n")
-            : null,
+        inputError: result.error.details?.length
+          ? `${result.error.message}\n${result.error.details
+              .map((detail) => `${detail.field}: ${detail.reason}`)
+              .join("\n")}`
+          : null,
         message: result.error.message,
         retryAfterUntil: resultRetryAfterUntil,
         retryable: result.error.retryable,
