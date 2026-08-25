@@ -28,6 +28,11 @@ h1 {
   line-height: 1.25;
 }
 
+.global-status {
+  margin-bottom: 0;
+  font-size: 12px;
+}
+
 h2 {
   margin-top: 28px;
   font-size: 15px;
@@ -64,6 +69,45 @@ button:disabled {
   color: #7d847f;
   background: #e2e5e2;
   cursor: not-allowed;
+}
+
+.secondary-button {
+  color: #315a40;
+  background: transparent;
+}
+
+.text-button {
+  width: auto;
+  margin: 0;
+  padding: 4px 0;
+  border: 0;
+  color: #315a40;
+  background: transparent;
+  font-size: 12px;
+  text-decoration: underline;
+}
+
+.section-heading-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.section-heading-row h2 {
+  margin-bottom: 0;
+}
+
+.operation-status {
+  min-height: 1.5em;
+  margin: 8px 0 0;
+  color: #58605a;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.operation-status:empty {
+  display: none;
 }
 
 .candidate-list {
@@ -357,6 +401,12 @@ textarea[aria-invalid="true"] {
   gap: 8px;
 }
 
+@media (max-width: 380px) {
+  .mode-buttons {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .mode-button {
   color: #315a40;
   background: transparent;
@@ -417,11 +467,6 @@ textarea[aria-invalid="true"] {
   border: 1px solid #d8ddd8;
   border-radius: 10px;
   background: #fff;
-}
-
-#complete-reading-button {
-  color: #315a40;
-  background: transparent;
 }
 
 .answer-review {
