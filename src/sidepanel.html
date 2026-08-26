@@ -114,14 +114,6 @@
             role="status"
             aria-live="polite"
           ></p>
-          <button
-            type="button"
-            id="reading-retry-button"
-            class="secondary-button"
-            hidden
-          >
-            読解サポートをもう一度試す
-          </button>
         </section>
       </form>
 
@@ -199,42 +191,52 @@
           aria-live="polite"
         ></p>
         <p id="reading-result-error" class="input-error" role="alert"></p>
-        <div class="reading-block">
-          <h3>注目するところ</h3>
-          <ul id="focus-points-list" class="reading-list"></ul>
-        </div>
-        <div class="reading-block">
-          <h3>確認する前提・入出力・分岐・副作用</h3>
-          <ul id="checks-list" class="reading-list"></ul>
-        </div>
-        <div class="reading-block">
-          <h3>自分で確かめる質問</h3>
-          <ul id="reading-questions-list" class="reading-list"></ul>
-        </div>
-        <div class="reading-block reading-block--hint">
-          <h3>段階的なヒント</h3>
-          <ol id="hints-list" class="reading-list"></ol>
-        </div>
-        <div id="next-candidates-block" class="reading-block">
-          <h3>次に確認する候補</h3>
-          <ul id="next-candidates-list" class="reading-list"></ul>
-        </div>
-        <button type="button" id="complete-reading-button">
-          このコードを自分で説明する
+        <button
+          type="button"
+          id="reading-retry-button"
+          class="secondary-button"
+          hidden
+        >
+          読解サポートをもう一度試す
         </button>
-        <button type="button" id="detail-button" class="secondary-button">
-          詳しい説明を見る
-        </button>
-        <p
-          id="detail-status"
-          class="operation-status"
-          role="status"
-          aria-live="polite"
-        ></p>
-        <p id="detail-error" class="input-error" role="alert"></p>
-        <div id="detailed-explanation-block" class="reading-block" hidden>
-          <h3>詳しい説明</h3>
-          <p id="detailed-explanation" class="answer-text"></p>
+        <div id="reading-guide-content" hidden>
+          <div class="reading-block">
+            <h3>注目するところ</h3>
+            <ul id="focus-points-list" class="reading-list"></ul>
+          </div>
+          <div class="reading-block">
+            <h3>確認する前提・入出力・分岐・副作用</h3>
+            <ul id="checks-list" class="reading-list"></ul>
+          </div>
+          <div class="reading-block">
+            <h3>自分で確かめる質問</h3>
+            <ul id="reading-questions-list" class="reading-list"></ul>
+          </div>
+          <div class="reading-block reading-block--hint">
+            <h3>段階的なヒント</h3>
+            <ol id="hints-list" class="reading-list"></ol>
+          </div>
+          <div id="next-candidates-block" class="reading-block">
+            <h3>次に確認する候補</h3>
+            <ul id="next-candidates-list" class="reading-list"></ul>
+          </div>
+          <button type="button" id="complete-reading-button">
+            このコードを自分で説明する
+          </button>
+          <button type="button" id="detail-button" class="secondary-button">
+            詳しい説明を見る
+          </button>
+          <p
+            id="detail-status"
+            class="operation-status"
+            role="status"
+            aria-live="polite"
+          ></p>
+          <p id="detail-error" class="input-error" role="alert"></p>
+          <div id="detailed-explanation-block" class="reading-block" hidden>
+            <h3>詳しい説明</h3>
+            <p id="detailed-explanation" class="answer-text"></p>
+          </div>
         </div>
         <button
           type="button"
