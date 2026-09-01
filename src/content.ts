@@ -26,6 +26,20 @@
       }
     }
 
+    for (const script of document.querySelectorAll(
+      'react-app script[data-target="react-app.embeddedData"]',
+    )) {
+      if (!script.textContent) continue;
+      try {
+        const data = JSON.parse(script.textContent);
+        const details =
+          globalThis.CodeReadingTrainerPageContext.readEmbeddedDetails(data);
+        if (details.repository) return data;
+      } catch {
+        continue;
+      }
+    }
+
     return undefined;
   }
 
@@ -70,7 +84,10 @@
       context.repository,
       context.ref,
       context.path,
-      context.status === PAGE_STATUS.ELIGIBLE ? context.commitOid : null,
+      context.status === PAGE_STATUS.ELIGIBLE ||
+      context.status === PAGE_STATUS.REPOSITORY
+        ? context.commitOid
+        : null,
     ]);
   }
 

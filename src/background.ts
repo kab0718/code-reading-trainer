@@ -5,9 +5,13 @@ importScripts(
 );
 
 import { requestTrainingCandidates } from "./python-candidates.js";
+import { selectRepositoryReadingRoute } from "./repository-reading-route.js";
 
 (() => {
   const EVALUATION_TIMEOUT_MS = 70_000;
+  const GITHUB_TREE_TIMEOUT_MS = 15_000;
+  const MAX_TREE_ENTRIES = 20_000;
+  const MAX_TREE_RESPONSE_BYTES = 5 * 1024 * 1024;
   const MAX_REQUEST_BYTES = 64 * 1024;
   const inFlightEvaluations = new Map<
     string,
@@ -136,6 +140,211 @@ import { requestTrainingCandidates } from "./python-candidates.js";
       value.commitOid ?? null,
       value.path ?? null,
     ]);
+  }
+
+  function repositoryContextKey(value: unknown): string {
+    if (!isRecord(value)) return "invalid";
+    return JSON.stringify([
+      value.repository ?? null,
+      value.commitOid ?? null,
+      value.ref ?? null,
+    ]);
+  }
+
+  async function readJsonWithLimit(
+    response: Response,
+  ): Promise<{ tooLarge: boolean; value?: unknown }> {
+    if (!response.body) {
+      return { tooLarge: false, value: await response.json() };
+    }
+    const reader = response.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let totalBytes = 0;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      totalBytes += value.byteLength;
+      if (totalBytes > MAX_TREE_RESPONSE_BYTES) {
+        await reader.cancel();
+        return { tooLarge: true };
+      }
+      chunks.push(value);
+    }
+    const combined = new Uint8Array(totalBytes);
+    let offset = 0;
+    for (const chunk of chunks) {
+      combined.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    return {
+      tooLarge: false,
+      value: JSON.parse(new TextDecoder().decode(combined)) as unknown,
+    };
+  }
+
+  async function requestRepositoryReadingRoute(
+    context: unknown,
+    requestId: string,
+    tabId: unknown,
+  ): Promise<RepositoryReadingRouteWorkerResult> {
+    const contextKey = repositoryContextKey(context);
+    const error = (
+      code: string,
+      message: string,
+      retryable = true,
+    ): RepositoryReadingRouteWorkerResult => ({
+      contextKey,
+      error: { code, message, retryable },
+      ok: false,
+      requestId,
+    });
+    if (
+      !Number.isInteger(tabId) ||
+      (tabId as number) < 0 ||
+      !isRecord(context) ||
+      context.status !== "repository" ||
+      typeof context.url !== "string" ||
+      typeof context.repository !== "string" ||
+      !/^[^/]+\/[^/]+$/u.test(context.repository) ||
+      typeof context.ref !== "string" ||
+      typeof context.commitOid !== "string" ||
+      !/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/iu.test(context.commitOid)
+    ) {
+      return error(
+        "INVALID_CONTEXT",
+        "表示中のrepositoryが変わったため、読解順序を作成できませんでした。",
+        false,
+      );
+    }
+    try {
+      const tab = await chrome.tabs.get(tabId as number);
+      if (!tab.url || tab.url !== context.url) {
+        return error(
+          "INVALID_CONTEXT",
+          "表示中のrepositoryが変わりました。",
+          false,
+        );
+      }
+      const latest = (await chrome.tabs.sendMessage(tabId as number, {
+        type: "GET_PAGE_CONTEXT",
+      })) as unknown;
+      if (!isRecord(latest) || latest.status !== "repository") {
+        return error(
+          "INVALID_CONTEXT",
+          "表示中のrepositoryが変わりました。",
+          false,
+        );
+      }
+      for (const field of ["url", "repository", "ref", "commitOid"] as const) {
+        if (latest[field] !== context[field]) {
+          return error(
+            "INVALID_CONTEXT",
+            "表示中のrepositoryが変わりました。",
+            false,
+          );
+        }
+      }
+
+      const [owner = "", repositoryName = ""] = context.repository.split("/");
+      const controller = new AbortController();
+      const timeout = setTimeout(
+        () => controller.abort(),
+        GITHUB_TREE_TIMEOUT_MS,
+      );
+      let response: Response;
+      let body: unknown;
+      try {
+        response = await fetch(
+          `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repositoryName)}/git/trees/${context.commitOid}?recursive=1`,
+          {
+            headers: { Accept: "application/vnd.github+json" },
+            signal: controller.signal,
+          },
+        );
+        if (!response.ok) {
+          clearTimeout(timeout);
+          const rateLimited =
+            response.status === 403 || response.status === 429;
+          return error(
+            rateLimited ? "GITHUB_RATE_LIMITED" : "GITHUB_API_ERROR",
+            rateLimited
+              ? "GitHub APIの利用上限に達しました。しばらく待ってから再試行してください。"
+              : "GitHubからファイル構成を取得できませんでした。もう一度お試しください。",
+          );
+        }
+        const contentLength = Number(
+          response.headers?.get("content-length") ?? Number.NaN,
+        );
+        if (
+          Number.isFinite(contentLength) &&
+          contentLength > MAX_TREE_RESPONSE_BYTES
+        ) {
+          clearTimeout(timeout);
+          return error(
+            "TREE_TOO_LARGE",
+            "repositoryのファイル構成が大きすぎるため、読解順序を作成できませんでした。",
+            false,
+          );
+        }
+        const parsed = await readJsonWithLimit(response);
+        if (parsed.tooLarge) {
+          clearTimeout(timeout);
+          return error(
+            "TREE_TOO_LARGE",
+            "repositoryのファイル構成が大きすぎるため、読解順序を作成できませんでした。",
+            false,
+          );
+        }
+        body = parsed.value;
+      } catch {
+        clearTimeout(timeout);
+        return error(
+          controller.signal.aborted ? "GITHUB_TIMEOUT" : "GITHUB_NETWORK_ERROR",
+          controller.signal.aborted
+            ? "ファイル構成の取得がタイムアウトしました。もう一度お試しください。"
+            : "GitHubからファイル構成を取得できませんでした。もう一度お試しください。",
+        );
+      }
+      clearTimeout(timeout);
+      if (!isRecord(body) || !Array.isArray(body.tree)) {
+        return error(
+          "INVALID_GITHUB_RESPONSE",
+          "GitHubから不正な応答を受信しました。もう一度お試しください。",
+        );
+      }
+      if (body.tree.length > MAX_TREE_ENTRIES || body.truncated === true) {
+        return error(
+          "TREE_TOO_LARGE",
+          "repositoryのファイル構成が大きすぎるため、読解順序を作成できませんでした。",
+          false,
+        );
+      }
+      const entries: Array<{ path: string; type: "blob" | "tree" }> =
+        body.tree.flatMap((entry) =>
+          isRecord(entry) &&
+          typeof entry.path === "string" &&
+          (entry.type === "blob" || entry.type === "tree")
+            ? [{ path: entry.path, type: entry.type as "blob" | "tree" }]
+            : [],
+        );
+      const candidates = selectRepositoryReadingRoute(
+        entries,
+        context.repository,
+        context.commitOid,
+      );
+      if (candidates.length === 0) {
+        return error(
+          "EMPTY_ROUTE",
+          "読解を始める候補を見つけられませんでした。",
+        );
+      }
+      return { candidates, contextKey, ok: true, requestId };
+    } catch {
+      return error(
+        "GITHUB_API_ERROR",
+        "読解順序を作成できませんでした。もう一度お試しください。",
+      );
+    }
   }
 
   async function requestCandidatesFromCurrentTab(
@@ -339,6 +548,19 @@ import { requestTrainingCandidates } from "./python-candidates.js";
         !isRecord(message)
       ) {
         return false;
+      }
+
+      if (
+        message.type === "REQUEST_REPOSITORY_READING_ROUTE" &&
+        typeof message.requestId === "string" &&
+        message.requestId.length <= 100
+      ) {
+        void requestRepositoryReadingRoute(
+          message.context,
+          message.requestId,
+          message.tabId,
+        ).then(sendResponse);
+        return true;
       }
 
       if (

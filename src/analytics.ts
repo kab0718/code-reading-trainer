@@ -8,7 +8,10 @@
       | "reading_support_started"
       | "reading_support_guide_displayed"
       | "reading_support_detail_displayed"
-      | "reading_support_completed",
+      | "reading_support_completed"
+      | "repository_route_started"
+      | "repository_route_displayed"
+      | "repository_route_file_selected",
     stage?: ReadingSupportStage,
   ): Promise<void> {
     pendingWrite = pendingWrite
@@ -21,7 +24,9 @@
         const event = {
           name,
           occurredAt: new Date().toISOString(),
-          mode: "reading_support",
+          mode: name.startsWith("repository_route_")
+            ? "repository_route"
+            : "reading_support",
           ...(stage ? { stage } : {}),
         };
         await chrome.storage.local.set({

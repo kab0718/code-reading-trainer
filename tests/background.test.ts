@@ -58,6 +58,7 @@ interface MockFetchInit {
 interface MockResponse {
   json?(): Promise<unknown>;
   ok: boolean;
+  status?: number;
 }
 
 interface BackgroundEnvironmentOptions {
@@ -196,6 +197,23 @@ function candidatesMessage(overrides = {}) {
   };
 }
 
+function repositoryRouteMessage(overrides = {}) {
+  return {
+    type: "REQUEST_REPOSITORY_READING_ROUTE",
+    tabId: 1,
+    requestId: "repository-route-1",
+    context: {
+      commitOid: "b".repeat(40),
+      path: null,
+      ref: "main",
+      repository: "example/project",
+      status: "repository",
+      url: "https://github.com/example/project",
+      ...overrides,
+    },
+  };
+}
+
 function jsonResponse(body, { ok = true } = {}) {
   return {
     ok,
@@ -263,6 +281,177 @@ test("候補contextが現在のタブと一致しなければGitHubへ接続し�
   assert.equal(response.ok, false);
   assert.equal(response.error.code, "INVALID_CONTEXT");
   assert.equal(environment.fetchCalls.length, 0);
+});
+
+test("明示要求後にimmutable commitのファイルツリーから読解順序を返す", async () => {
+  const message = repositoryRouteMessage();
+  const environment = createBackgroundEnvironment({
+    candidateTabContext: message.context,
+    fetchImpl: async () =>
+      jsonResponse({
+        truncated: false,
+        tree: [
+          { path: "README.md", type: "blob" },
+          { path: "pyproject.toml", type: "blob" },
+          { path: "src/project/main.py", type: "blob" },
+          { path: "src/project/service.py", type: "blob" },
+          { path: "tests/test_service.py", type: "blob" },
+        ],
+      }),
+  });
+
+  const response = await environment.send(message).response;
+
+  assert.equal(response.ok, true);
+  assert.equal(response.candidates.length, 5);
+  assert.deepEqual(
+    JSON.parse(
+      JSON.stringify(
+        response.candidates.map((candidate) => candidate.category),
+      ),
+    ),
+    ["overview", "configuration", "entrypoint", "core", "test"],
+  );
+  assert.match(
+    environment.fetchCalls[0][0].toString(),
+    /\/git\/trees\/b{40}\?recursive=1$/u,
+  );
+});
+
+test("repository contextが現在のタブと一致しなければツリーを取得しない", async () => {
+  const message = repositoryRouteMessage();
+  const environment = createBackgroundEnvironment({
+    candidateTabContext: {
+      ...message.context,
+      commitOid: "c".repeat(40),
+    },
+  });
+
+  const response = await environment.send(message).response;
+
+  assert.equal(response.ok, false);
+  assert.equal(response.error.code, "INVALID_CONTEXT");
+  assert.equal(environment.fetchCalls.length, 0);
+});
+
+test("GitHub APIのRate Limitを再試行可能なエラーとして返す", async () => {
+  const message = repositoryRouteMessage();
+  const environment = createBackgroundEnvironment({
+    candidateTabContext: message.context,
+    fetchImpl: async () => ({ ok: false, status: 403 }),
+  });
+
+  const response = await environment.send(message).response;
+
+  assert.equal(response.ok, false);
+  assert.equal(response.error.code, "GITHUB_RATE_LIMITED");
+  assert.equal(response.error.retryable, true);
+});
+
+test("候補が空の場合も別の取得結果で再試行できる", async () => {
+  const message = repositoryRouteMessage();
+  const environment = createBackgroundEnvironment({
+    candidateTabContext: message.context,
+    fetchImpl: async () => jsonResponse({ truncated: false, tree: [] }),
+  });
+
+  const response = await environment.send(message).response;
+
+  assert.equal(response.ok, false);
+  assert.equal(response.error.code, "EMPTY_ROUTE");
+  assert.equal(response.error.retryable, true);
+});
+
+test("Content-Lengthが小さくても実受信サイズが上限を超えれば中断する", async () => {
+  const message = repositoryRouteMessage();
+  let cancelled = false;
+  const oversizedChunk = new Uint8Array(5 * 1024 * 1024 + 1);
+  const environment = createBackgroundEnvironment({
+    candidateTabContext: message.context,
+    fetchImpl: async () => ({
+      body: {
+        getReader() {
+          let sent = false;
+          return {
+            async cancel() {
+              cancelled = true;
+            },
+            async read() {
+              if (sent) return { done: true, value: undefined };
+              sent = true;
+              return { done: false, value: oversizedChunk };
+            },
+          };
+        },
+      },
+      headers: { get: () => "1" },
+      ok: true,
+    }),
+  });
+
+  const response = await environment.send(message).response;
+
+  assert.equal(response.ok, false);
+  assert.equal(response.error.code, "TREE_TOO_LARGE");
+  assert.equal(response.error.retryable, false);
+  assert.equal(cancelled, true);
+});
+
+test("truncatedされたツリーを不完全な候補として表示しない", async () => {
+  const message = repositoryRouteMessage();
+  const environment = createBackgroundEnvironment({
+    candidateTabContext: message.context,
+    fetchImpl: async () =>
+      jsonResponse({
+        truncated: true,
+        tree: [{ path: "README.md", type: "blob" }],
+      }),
+  });
+
+  const response = await environment.send(message).response;
+
+  assert.equal(response.ok, false);
+  assert.equal(response.error.code, "TREE_TOO_LARGE");
+});
+
+test("不正なGitHub API応答を再試行可能なエラーとして返す", async () => {
+  const message = repositoryRouteMessage();
+  const environment = createBackgroundEnvironment({
+    candidateTabContext: message.context,
+    fetchImpl: async () => jsonResponse({ unexpected: [] }),
+  });
+
+  const response = await environment.send(message).response;
+
+  assert.equal(response.ok, false);
+  assert.equal(response.error.code, "INVALID_GITHUB_RESPONSE");
+  assert.equal(response.error.retryable, true);
+});
+
+test("15秒でGitHubツリー取得を中断し再試行可能なエラーを返す", async () => {
+  const message = repositoryRouteMessage();
+  let timeoutDelay;
+  const environment = createBackgroundEnvironment({
+    candidateTabContext: message.context,
+    fetchImpl: async (_url, init) =>
+      new Promise((_resolve, reject) => {
+        init.signal.addEventListener("abort", () =>
+          reject(new DOMException("aborted", "AbortError")),
+        );
+      }),
+    setTimeoutImpl(callback, delay) {
+      timeoutDelay = delay;
+      queueMicrotask(callback);
+      return 1;
+    },
+  });
+
+  const response = await environment.send(message).response;
+
+  assert.equal(timeoutDelay, 15_000);
+  assert.equal(response.ok, false);
+  assert.equal(response.error.code, "GITHUB_TIMEOUT");
+  assert.equal(response.error.retryable, true);
 });
 
 test("サイドパネル以外からの評価メッセージを拒否する", async () => {

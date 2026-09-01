@@ -117,15 +117,56 @@ test("Python以外のblobページを対象外にする", () => {
   assert.equal(result.reason, UNSUPPORTED_REASON.NOT_PYTHON);
 });
 
-test("treeページとrepositoryトップをコード画面として扱わない", () => {
-  for (const url of [
-    "https://github.com/python/cpython/tree/main/Lib",
-    "https://github.com/python/cpython",
-  ]) {
-    const result = analyzeGitHubPage(publicPage({ url }));
-    assert.equal(result.status, PAGE_STATUS.UNSUPPORTED);
-    assert.equal(result.reason, UNSUPPORTED_REASON.NOT_CODE_VIEW);
-  }
+test("treeページをrepositoryトップとして扱わない", () => {
+  const result = analyzeGitHubPage(
+    publicPage({ url: "https://github.com/python/cpython/tree/main/Lib" }),
+  );
+  assert.equal(result.status, PAGE_STATUS.UNSUPPORTED);
+  assert.equal(result.reason, UNSUPPORTED_REASON.NOT_CODE_VIEW);
+});
+
+test("public repositoryトップをcommit固定の対象ページとして認識する", () => {
+  const commitOid = "b".repeat(40);
+  const result = analyzeGitHubPage(
+    publicPage({
+      url: "https://github.com/python/cpython",
+      embeddedData: {
+        payload: {
+          codeViewRepoRoute: {
+            path: "/",
+            refInfo: { name: "main", currentOid: commitOid },
+          },
+          codeViewLayoutRoute: {
+            repo: {
+              ownerLogin: "python",
+              name: "cpython",
+              public: true,
+            },
+            refInfo: { name: "main", currentOid: commitOid },
+            path: "/",
+          },
+        },
+      },
+    }),
+  );
+
+  assert.deepEqual(result, {
+    commitOid,
+    status: PAGE_STATUS.REPOSITORY,
+    reason: null,
+    url: "https://github.com/python/cpython",
+    repository: "python/cpython",
+    ref: "main",
+    path: null,
+  });
+});
+
+test("repositoryトップはcommit OIDを確認できなければ対象化しない", () => {
+  const result = analyzeGitHubPage(
+    publicPage({ url: "https://github.com/python/cpython" }),
+  );
+  assert.equal(result.status, PAGE_STATUS.UNSUPPORTED);
+  assert.equal(result.reason, UNSUPPORTED_REASON.PAGE_DATA_UNAVAILABLE);
 });
 
 test("GitHub以外のページを対象外にする", () => {

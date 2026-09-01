@@ -45,6 +45,18 @@ function eligibleContext(filePath) {
   };
 }
 
+function repositoryContext() {
+  return {
+    commitOid: "b".repeat(40),
+    status: "repository",
+    reason: null,
+    url: "https://github.com/example/project",
+    repository: "example/project",
+    ref: "main",
+    path: null,
+  };
+}
+
 function evaluationResponse(totalScore = 82) {
   let remainingScore = totalScore;
   const criteriaDefinitions: ReadonlyArray<readonly [string, string, number]> =
@@ -131,8 +143,20 @@ function createSidepanelEnvironment({
     ok: true,
     requestId: message.requestId,
   });
+  let repositoryRouteHandler = async (message) => ({
+    candidates: [],
+    contextKey: JSON.stringify([
+      message.context.repository,
+      message.context.commitOid,
+      message.context.ref,
+    ]),
+    ok: true,
+    requestId: message.requestId,
+  });
   const evaluationMessages = [];
   const candidateMessages = [];
+  const repositoryRouteMessages = [];
+  const tabUpdates = [];
   const permissionRequests = [];
   let pageContextRequests = 0;
   const timers = new Map();
@@ -186,6 +210,23 @@ function createSidepanelEnvironment({
   });
   const elements: Record<string, MockElement> = {
     "#status": createElement("#status", { textContent: "" }),
+    "#repository-route-section": createElement("#repository-route-section", {
+      hidden: true,
+    }),
+    "#repository-route-button": createElement("#repository-route-button", {
+      disabled: false,
+      hidden: false,
+    }),
+    "#repository-route-status": createElement("#repository-route-status", {
+      textContent: "",
+    }),
+    "#repository-route-retry-button": createElement(
+      "#repository-route-retry-button",
+      { hidden: true },
+    ),
+    "#repository-route-list": createElement("#repository-route-list", {
+      children: [],
+    }),
     "#training-methods": createElement("#training-methods", {
       hidden: false,
     }),
@@ -321,6 +362,10 @@ function createSidepanelEnvironment({
       },
       runtime: {
         async sendMessage(message) {
+          if (message.type === "REQUEST_REPOSITORY_READING_ROUTE") {
+            repositoryRouteMessages.push(message);
+            return repositoryRouteHandler(message);
+          }
           if (message.type === "REQUEST_TRAINING_CANDIDATES") {
             candidateMessages.push(message);
             return candidatesHandler(message);
@@ -350,6 +395,9 @@ function createSidepanelEnvironment({
         async sendMessage() {
           pageContextRequests += 1;
           return pageContextHandler();
+        },
+        async update(tabId, update) {
+          tabUpdates.push({ tabId, update });
         },
         onActivated: {
           addListener(listener) {
@@ -470,6 +518,8 @@ function createSidepanelEnvironment({
     },
     evaluationMessages,
     candidateMessages,
+    repositoryRouteMessages,
+    tabUpdates,
     permissionRequests,
     getPageContextRequestCount() {
       return pageContextRequests;
@@ -485,6 +535,20 @@ function createSidepanelEnvironment({
     },
     setCandidatesHandler(handler) {
       candidatesHandler = handler;
+    },
+    setRepositoryRouteHandler(handler) {
+      repositoryRouteHandler = handler;
+    },
+    async loadRepositoryRoute() {
+      listeners.get("#repository-route-button:click")();
+      await new Promise((resolve) => setImmediate(resolve));
+    },
+    async retryRepositoryRoute() {
+      listeners.get("#repository-route-retry-button:click")();
+      await new Promise((resolve) => setImmediate(resolve));
+    },
+    openRenderedRepositoryFile() {
+      listeners.get("<button>:click")();
     },
     storage,
     runTimers() {
@@ -527,6 +591,155 @@ test("回答フォームで1回限りのルールを明示する", () => {
 test("初期画面にGitHub上のテキスト選択導線を表示しない", () => {
   assert.doesNotMatch(sidepanelHtmlSource, /selection-button/u);
   assert.doesNotMatch(sidepanelHtmlSource, /対象コードを読む/u);
+});
+
+test("repositoryトップでは明示操作までファイルツリーを要求しない", async () => {
+  const environment = createSidepanelEnvironment();
+  environment.navigate(repositoryContext());
+  await flushPromises();
+
+  assert.equal(environment.repositoryRouteMessages.length, 0);
+  assert.equal(environment.elements["#repository-route-section"].hidden, false);
+  assert.equal(environment.elements["#training-methods"].hidden, true);
+  assert.match(sidepanelHtmlSource, /ファイル本文は取得せず/u);
+
+  await environment.loadRepositoryRoute();
+  assert.equal(environment.repositoryRouteMessages.length, 1);
+});
+
+test("読解順序に分類・パス・理由を表示し同じcommitのファイルを開く", async () => {
+  const environment = createSidepanelEnvironment();
+  const page = repositoryContext();
+  environment.navigate(page);
+  await flushPromises();
+  environment.setRepositoryRouteHandler(async (message) => ({
+    candidates: [
+      {
+        category: "overview",
+        path: "README.md",
+        reason: "全体像を確認するためです。",
+        url: `https://github.com/example/project/blob/${page.commitOid}/README.md`,
+      },
+    ],
+    contextKey: JSON.stringify([
+      message.context.repository,
+      message.context.commitOid,
+      message.context.ref,
+    ]),
+    ok: true,
+    requestId: message.requestId,
+  }));
+
+  await environment.loadRepositoryRoute();
+
+  assert.match(
+    elementText(environment.elements["#repository-route-list"]),
+    /概要README\.md全体像を確認するためです/u,
+  );
+  environment.openRenderedRepositoryFile();
+  assert.deepEqual(JSON.parse(JSON.stringify(environment.tabUpdates)), [
+    {
+      tabId: 1,
+      update: {
+        url: `https://github.com/example/project/blob/${page.commitOid}/README.md`,
+      },
+    },
+  ]);
+});
+
+test("ファイルツリー取得失敗後に同じrepositoryで再試行できる", async () => {
+  const environment = createSidepanelEnvironment();
+  environment.navigate(repositoryContext());
+  await flushPromises();
+  environment.setRepositoryRouteHandler(async (message) => ({
+    contextKey: "key",
+    error: {
+      code: "GITHUB_RATE_LIMITED",
+      message: "GitHub APIの利用上限に達しました。",
+      retryable: true,
+    },
+    ok: false,
+    requestId: message.requestId,
+  }));
+
+  await environment.loadRepositoryRoute();
+  assert.equal(
+    environment.elements["#repository-route-retry-button"].hidden,
+    false,
+  );
+
+  await environment.retryRepositoryRoute();
+  assert.equal(environment.repositoryRouteMessages.length, 2);
+});
+
+test("空の読解候補でも再試行操作を表示する", async () => {
+  const environment = createSidepanelEnvironment();
+  environment.navigate(repositoryContext());
+  await flushPromises();
+  environment.setRepositoryRouteHandler(async (message) => ({
+    contextKey: "key",
+    error: {
+      code: "EMPTY_ROUTE",
+      message: "読解を始める候補を見つけられませんでした。",
+      retryable: true,
+    },
+    ok: false,
+    requestId: message.requestId,
+  }));
+
+  await environment.loadRepositoryRoute();
+
+  assert.equal(
+    environment.elements["#repository-route-retry-button"].hidden,
+    false,
+  );
+});
+
+test("ページ遷移後に届いた古いrepositoryの読解順序を表示しない", async () => {
+  const environment = createSidepanelEnvironment();
+  const first = repositoryContext();
+  environment.navigate(first);
+  await flushPromises();
+  let finishRequest;
+  environment.setRepositoryRouteHandler(
+    (message) =>
+      new Promise((resolve) => {
+        finishRequest = () =>
+          resolve({
+            candidates: [
+              {
+                category: "overview",
+                path: "README.md",
+                reason: "古い候補です。",
+                url: `https://github.com/example/project/blob/${first.commitOid}/README.md`,
+              },
+            ],
+            contextKey: "old-key",
+            ok: true,
+            requestId: message.requestId,
+          });
+      }),
+  );
+  await environment.loadRepositoryRoute();
+
+  environment.navigate({
+    ...repositoryContext(),
+    commitOid: "c".repeat(40),
+    repository: "example/next-project",
+    url: "https://github.com/example/next-project",
+  });
+  await flushPromises();
+  finishRequest();
+  await flushPromises();
+
+  assert.equal(
+    environment.elements["#repository-route-list"].children.length,
+    0,
+  );
+  assert.doesNotMatch(
+    elementText(environment.elements["#repository-route-list"]),
+    /古い候補/u,
+  );
 });
 
 test("対象Pythonファイルでは明示操作まで候補取得を始めない", async () => {

@@ -1,4 +1,4 @@
-type PageStatus = "eligible" | "unsupported";
+type PageStatus = "eligible" | "repository" | "unsupported";
 
 type UnsupportedReason =
   | "invalid-url"
@@ -25,13 +25,24 @@ interface EligiblePageContext extends PageDetails {
   url: string;
 }
 
+interface RepositoryPageContext extends PageDetails {
+  commitOid: string;
+  path: null;
+  reason: null;
+  ref: string;
+  repository: string;
+  status: "repository";
+  url: string;
+}
+
 interface UnsupportedPageContext extends PageDetails {
   reason: UnsupportedReason;
   status: "unsupported";
   url: string;
 }
 
-type AnalyzedPageContext = EligiblePageContext | UnsupportedPageContext;
+type AnalyzedPageContext =
+  EligiblePageContext | RepositoryPageContext | UnsupportedPageContext;
 
 type PageContext = AnalyzedPageContext & {
   tabId?: number;
@@ -48,6 +59,7 @@ interface AnalyzeGitHubPageInput {
 interface PageContextApi {
   PAGE_STATUS: Readonly<{
     ELIGIBLE: "eligible";
+    REPOSITORY: "repository";
     UNSUPPORTED: "unsupported";
   }>;
   UNSUPPORTED_REASON: Readonly<Record<string, UnsupportedReason>>;
@@ -62,6 +74,30 @@ interface EmbeddedDetails {
   repository?: string;
   repositoryPublic?: boolean;
 }
+
+type RepositoryReadingCategory =
+  "overview" | "configuration" | "entrypoint" | "core" | "test";
+
+interface RepositoryReadingCandidate {
+  category: RepositoryReadingCategory;
+  path: string;
+  reason: string;
+  url: string;
+}
+
+type RepositoryReadingRouteWorkerResult =
+  | {
+      candidates: RepositoryReadingCandidate[];
+      contextKey: string;
+      ok: true;
+      requestId: string;
+    }
+  | {
+      contextKey: string;
+      error: { code: string; message: string; retryable: boolean };
+      ok: false;
+      requestId: string;
+    };
 
 type TrainingCandidateLevel = "warmup" | "recommended" | "challenge";
 
@@ -166,7 +202,10 @@ interface AnalyticsApi {
       | "reading_support_started"
       | "reading_support_guide_displayed"
       | "reading_support_detail_displayed"
-      | "reading_support_completed",
+      | "reading_support_completed"
+      | "repository_route_started"
+      | "repository_route_displayed"
+      | "repository_route_file_selected",
     stage?: ReadingSupportStage,
   ): Promise<void>;
 }

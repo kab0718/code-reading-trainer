@@ -384,6 +384,41 @@ textarea[aria-invalid="true"] {
   line-height: 1.6;
 }
 
+.repository-route-list {
+  display: grid;
+  gap: 12px;
+  margin: 18px 0 0;
+  padding-left: 24px;
+}
+
+.repository-route-item {
+  padding: 12px;
+  border: 1px solid #d8ddd8;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.repository-route-category {
+  margin: 0 0 4px;
+  color: #315a40;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.repository-route-path {
+  margin: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.repository-route-reason {
+  margin: 7px 0 0;
+  color: #58605a;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
 .mode-selector {
   margin: 20px 0 0;
   padding: 0;
