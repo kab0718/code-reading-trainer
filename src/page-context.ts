@@ -1,6 +1,7 @@
 (function initializePageContext(globalObject: typeof globalThis) {
   const PAGE_STATUS = Object.freeze({
     ELIGIBLE: "eligible",
+    REPOSITORY: "repository",
     UNSUPPORTED: "unsupported",
   });
 
@@ -62,14 +63,30 @@
     const layoutRefInfo = isRecord(layoutRoute?.refInfo)
       ? layoutRoute.refInfo
       : undefined;
-    const repo = isRecord(layoutRoute?.repo) ? layoutRoute.repo : undefined;
+    const rootRouteCandidates = [
+      payload.repoOverviewRoute,
+      payload.repositoryRoute,
+      payload.repo,
+      payload.repository,
+    ];
+    const rootRoute = rootRouteCandidates.find(isRecord);
+    const rootRefInfo = isRecord(payload.refInfo)
+      ? payload.refInfo
+      : isRecord(rootRoute?.refInfo)
+        ? rootRoute.refInfo
+        : undefined;
+    const repoCandidates = [layoutRoute?.repo, rootRoute?.repo, rootRoute];
+    const repo = repoCandidates.find(isRecord);
     const path = blobRoute?.path ?? layoutRoute?.path;
     const ref = blobRefInfo?.name ?? layoutRefInfo?.name;
     const repository =
       typeof repo?.ownerLogin === "string" && typeof repo.name === "string"
         ? `${repo.ownerLogin}/${repo.name}`
         : undefined;
-    const repositoryPublic = repo?.public;
+    const repositoryPublic =
+      repo?.public ??
+      repo?.isPublic ??
+      (typeof repo?.isPrivate === "boolean" ? !repo.isPrivate : undefined);
     const commitOidCandidates = [
       blobRoute?.commitOid,
       blobRoute?.oid,
@@ -81,6 +98,13 @@
       isRecord(layoutRefInfo) ? layoutRefInfo.currentOid : undefined,
       payload.commitOid,
       payload.currentOid,
+      rootRoute?.commitOid,
+      rootRoute?.oid,
+      isRecord(rootRoute?.commit) ? rootRoute.commit.oid : undefined,
+      isRecord(rootRoute?.refInfo) ? rootRoute.refInfo.oid : undefined,
+      isRecord(rootRoute?.refInfo) ? rootRoute.refInfo.currentOid : undefined,
+      rootRefInfo?.oid,
+      rootRefInfo?.currentOid,
     ];
     const commitOid = commitOidCandidates.find(
       (value): value is string =>
@@ -91,7 +115,14 @@
     return {
       commitOid,
       path: typeof path === "string" ? path : undefined,
-      ref: typeof ref === "string" ? ref : undefined,
+      ref:
+        typeof ref === "string"
+          ? ref
+          : typeof rootRoute?.refName === "string"
+            ? rootRoute.refName
+            : typeof rootRefInfo?.name === "string"
+              ? rootRefInfo.name
+              : undefined,
       repository,
       repositoryPublic:
         typeof repositoryPublic === "boolean" ? repositoryPublic : undefined,
@@ -160,13 +191,14 @@
     }
 
     const segments = decodePathSegments(parsedUrl.pathname);
-    if (
-      !segments ||
-      segments.length < 5 ||
-      !segments[0] ||
-      !segments[1] ||
-      segments[2] !== "blob"
-    ) {
+    if (!segments || !segments[0] || !segments[1]) {
+      return unsupported(parsedUrl.href, UNSUPPORTED_REASON.NOT_CODE_VIEW);
+    }
+
+    const isRepositoryRoot =
+      segments.length === 2 || (segments.length === 3 && segments[2] === "");
+    const isBlob = segments.length >= 5 && segments[2] === "blob";
+    if (!isRepositoryRoot && !isBlob) {
       return unsupported(parsedUrl.href, UNSUPPORTED_REASON.NOT_CODE_VIEW);
     }
 
@@ -196,8 +228,12 @@
       );
     }
 
-    const refAndPath = resolveRefAndPath(segments.slice(3), embeddedDetails);
-    if (!refAndPath?.ref || !refAndPath.path) {
+    const refAndPath = isBlob
+      ? resolveRefAndPath(segments.slice(3), embeddedDetails)
+      : embeddedDetails.ref
+        ? { ref: embeddedDetails.ref, path: null }
+        : null;
+    if (!refAndPath?.ref || (isBlob && !refAndPath.path)) {
       return unsupported(
         parsedUrl.href,
         UNSUPPORTED_REASON.PAGE_DATA_UNAVAILABLE,
@@ -239,7 +275,26 @@
       );
     }
 
-    if (!refAndPath.path.endsWith(".py")) {
+    if (isRepositoryRoot) {
+      if (!embeddedDetails.commitOid) {
+        return unsupported(
+          parsedUrl.href,
+          UNSUPPORTED_REASON.PAGE_DATA_UNAVAILABLE,
+          details,
+        );
+      }
+      return {
+        commitOid: embeddedDetails.commitOid,
+        status: PAGE_STATUS.REPOSITORY,
+        reason: null,
+        url: parsedUrl.href,
+        repository,
+        ref: refAndPath.ref,
+        path: null,
+      };
+    }
+
+    if (!refAndPath.path?.endsWith(".py")) {
       return unsupported(
         parsedUrl.href,
         UNSUPPORTED_REASON.NOT_PYTHON,

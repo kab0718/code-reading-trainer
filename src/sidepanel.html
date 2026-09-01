@@ -19,6 +19,32 @@
         GitHubのソースコード画面を確認しています…
       </p>
 
+      <section id="repository-route-section" hidden>
+        <h2>このrepositoryを読み始める</h2>
+        <p id="repository-route-note" class="privacy-note">
+          GitHub APIからpublic
+          repositoryのファイル構成（ファイルパス）を取得します。ファイル本文は取得せず、この操作ではAIへ送信しません。
+        </p>
+        <button type="button" id="repository-route-button">
+          このrepositoryを読み始める
+        </button>
+        <p
+          id="repository-route-status"
+          class="operation-status"
+          role="status"
+          aria-live="polite"
+        ></p>
+        <button
+          type="button"
+          id="repository-route-retry-button"
+          class="secondary-button"
+          hidden
+        >
+          もう一度試す
+        </button>
+        <ol id="repository-route-list" class="repository-route-list"></ol>
+      </section>
+
       <section id="training-methods">
         <h2>このファイルを読む</h2>
         <p class="status">

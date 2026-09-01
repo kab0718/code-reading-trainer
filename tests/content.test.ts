@@ -93,6 +93,13 @@ function createContentEnvironment({
         }
         return null;
       },
+      querySelectorAll(selector) {
+        if (!selector.includes("react-app.embeddedData")) return [];
+        const embeddedDataEntries = embeddedDataByAppName
+          ? Object.entries(embeddedDataByAppName)
+          : [[embeddedAppName, currentEmbeddedData]];
+        return embeddedDataEntries.map(([, textContent]) => ({ textContent }));
+      },
     },
     window: {
       location,
@@ -198,11 +205,11 @@ test("code-viewのJSONが不正な場合は従来形式へフォールバック�
   assert.equal(environment.getContext().path, "Lib/abc.py");
 });
 
-test("未対応のapp-nameではページデータ取得不可として扱う", () => {
+test("未知のapp-nameでもrepository情報を持つ埋め込みデータを利用する", () => {
   const environment = createContentEnvironment({ embeddedAppName: "unknown" });
 
-  assert.equal(environment.getContext().status, "unsupported");
-  assert.equal(environment.getContext().reason, "page-data-unavailable");
+  assert.equal(environment.getContext().status, "eligible");
+  assert.equal(environment.getContext().path, "Lib/abc.py");
 });
 
 test("表示中blobのcommit OIDをページ情報へ含める", () => {

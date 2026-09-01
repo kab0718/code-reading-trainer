@@ -8,6 +8,21 @@
   }
 
   const statusElement = requireElement<HTMLElement>("#status");
+  const repositoryRouteSection = requireElement<HTMLElement>(
+    "#repository-route-section",
+  );
+  const repositoryRouteButton = requireElement<HTMLButtonElement>(
+    "#repository-route-button",
+  );
+  const repositoryRouteStatus = requireElement<HTMLElement>(
+    "#repository-route-status",
+  );
+  const repositoryRouteRetryButton = requireElement<HTMLButtonElement>(
+    "#repository-route-retry-button",
+  );
+  const repositoryRouteList = requireElement<HTMLOListElement>(
+    "#repository-route-list",
+  );
   const trainingMethodsElement =
     requireElement<HTMLElement>("#training-methods");
   const candidateLoadButton = requireElement<HTMLButtonElement>(
@@ -118,6 +133,7 @@
 
   const PAGE_STATUS = Object.freeze({
     ELIGIBLE: "eligible",
+    REPOSITORY: "repository",
     UNSUPPORTED: "unsupported",
   });
 
@@ -134,6 +150,9 @@
       "invalid-url": "現在のページURLを確認できませんでした。",
     });
   let activePageKey: string | null = null;
+  let activeRepositoryContext:
+    (RepositoryPageContext & { tabId?: number }) | null = null;
+  let repositoryRouteAttempt = 0;
   let activeCandidateContextKey: string | null = null;
   let candidateLoadAuthorizedPageKey: string | null = null;
   const CANDIDATE_CACHE_LIMIT = 12;
@@ -268,6 +287,14 @@
     selectedCandidateId = null;
     candidateRequestAttempt += 1;
     activeCandidateContextKey = null;
+    activeRepositoryContext = null;
+    repositoryRouteAttempt += 1;
+    repositoryRouteSection.hidden = true;
+    repositoryRouteButton.hidden = false;
+    repositoryRouteButton.disabled = false;
+    repositoryRouteRetryButton.hidden = true;
+    repositoryRouteStatus.textContent = "";
+    repositoryRouteList.replaceChildren();
     candidateLoadAuthorizedPageKey = null;
     candidateSection.hidden = true;
     candidateStatus.textContent = "";
@@ -790,6 +817,7 @@
     sessionAlreadyReset = false,
   ): void {
     const isEligible = context.status === PAGE_STATUS.ELIGIBLE;
+    const isRepository = context.status === PAGE_STATUS.REPOSITORY;
     const nextPageKey = isEligible
       ? JSON.stringify([
           context.repository,
@@ -819,11 +847,30 @@
       return;
     }
 
+    if (isRepository) {
+      if (!sessionAlreadyReset) resetSession();
+      activePageKey = JSON.stringify([
+        context.repository,
+        context.commitOid,
+        context.ref,
+      ]);
+      activeRepositoryContext = context;
+      trainingMethodsElement.hidden = true;
+      candidateSection.hidden = true;
+      repositoryRouteSection.hidden = false;
+      repositoryRouteButton.hidden = false;
+      repositoryRouteButton.disabled = false;
+      statusElement.textContent = `${context.repository}（${context.ref}）のトップを表示しています。`;
+      return;
+    }
+
     if (!sessionAlreadyReset) {
       resetSession();
     }
     activePageKey = null;
     activeCandidateContextKey = null;
+    activeRepositoryContext = null;
+    repositoryRouteSection.hidden = true;
     candidateLoadButton.hidden = true;
     candidateLoadButton.disabled = true;
     candidateLoadNote.hidden = true;
@@ -832,6 +879,99 @@
       unsupportedMessages[context.reason] ??
       "このページはトレーニング対象外です。";
   }
+
+  const repositoryCategoryLabels: Record<RepositoryReadingCategory, string> = {
+    overview: "概要",
+    configuration: "設定",
+    entrypoint: "入口",
+    core: "中心処理",
+    test: "テスト",
+  };
+
+  function renderRepositoryRoute(
+    candidates: readonly RepositoryReadingCandidate[],
+    context: RepositoryPageContext & { tabId?: number },
+  ): void {
+    repositoryRouteList.replaceChildren();
+    for (const candidate of candidates) {
+      const item = document.createElement("li");
+      item.className = "repository-route-item";
+      const category = document.createElement("p");
+      category.className = "repository-route-category";
+      category.textContent = repositoryCategoryLabels[candidate.category];
+      const path = document.createElement("p");
+      path.className = "repository-route-path";
+      path.textContent = candidate.path;
+      const reason = document.createElement("p");
+      reason.className = "repository-route-reason";
+      reason.textContent = candidate.reason;
+      const openButton = document.createElement("button");
+      openButton.type = "button";
+      openButton.className = "secondary-button";
+      openButton.textContent = "このファイルを開く";
+      openButton.addEventListener("click", () => {
+        void analytics
+          .record("repository_route_file_selected")
+          .catch(() => undefined);
+        if (context.tabId !== undefined) {
+          void chrome.tabs.update(context.tabId, { url: candidate.url });
+        }
+      });
+      item.append(category, path, reason, openButton);
+      repositoryRouteList.append(item);
+    }
+  }
+
+  async function loadRepositoryRoute(): Promise<void> {
+    const context = activeRepositoryContext;
+    if (!context?.tabId || !activePageKey) return;
+    const expectedKey = activePageKey;
+    const attempt = ++repositoryRouteAttempt;
+    repositoryRouteButton.hidden = true;
+    repositoryRouteRetryButton.hidden = true;
+    repositoryRouteStatus.textContent =
+      "ファイル構成から読解順序を作成しています…";
+    repositoryRouteList.replaceChildren();
+    void analytics.record("repository_route_started").catch(() => undefined);
+    try {
+      const requestId = `repository-route-${Date.now()}-${attempt}`;
+      const result = (await chrome.runtime.sendMessage({
+        context,
+        requestId,
+        tabId: context.tabId,
+        type: "REQUEST_REPOSITORY_READING_ROUTE",
+      })) as RepositoryReadingRouteWorkerResult | undefined;
+      if (
+        attempt !== repositoryRouteAttempt ||
+        expectedKey !== activePageKey ||
+        !result
+      ) {
+        return;
+      }
+      if ("error" in result) {
+        repositoryRouteStatus.textContent = result.error.message;
+        repositoryRouteRetryButton.hidden = !result.error.retryable;
+        return;
+      }
+      renderRepositoryRoute(result.candidates, context);
+      repositoryRouteStatus.textContent = `${result.candidates.length}件のファイルを読む順番に並べました。`;
+      void analytics
+        .record("repository_route_displayed")
+        .catch(() => undefined);
+    } catch {
+      if (attempt !== repositoryRouteAttempt) return;
+      repositoryRouteStatus.textContent =
+        "読解順序を作成できませんでした。もう一度お試しください。";
+      repositoryRouteRetryButton.hidden = false;
+    }
+  }
+
+  repositoryRouteButton.addEventListener("click", () => {
+    void loadRepositoryRoute();
+  });
+  repositoryRouteRetryButton.addEventListener("click", () => {
+    void loadRepositoryRoute();
+  });
 
   function getErrorMessage(error: unknown): string {
     if (error instanceof Error && error.message.startsWith("GitHub")) {
