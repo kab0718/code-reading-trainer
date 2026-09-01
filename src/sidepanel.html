@@ -21,7 +21,15 @@
 
       <section id="training-methods">
         <h2>このファイルを読む</h2>
-        <p class="status">学習に向いた関数・メソッドを自動で探します。</p>
+        <p class="status">
+          公開Pythonファイルから、学習に向いた関数・メソッドを探します。
+        </p>
+        <button type="button" id="candidate-load-button" hidden>
+          この公開Pythonファイルを読み込み、練習候補を探す
+        </button>
+        <p id="candidate-load-note" class="privacy-note" hidden>
+          ファイルは端末内で解析され、この操作ではAIには送信されません。AIへの送信は「評価する」または「読解サポート」の操作時に行います。
+        </p>
       </section>
 
       <section id="candidate-section" hidden>

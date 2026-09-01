@@ -10,6 +10,10 @@
   const statusElement = requireElement<HTMLElement>("#status");
   const trainingMethodsElement =
     requireElement<HTMLElement>("#training-methods");
+  const candidateLoadButton = requireElement<HTMLButtonElement>(
+    "#candidate-load-button",
+  );
+  const candidateLoadNote = requireElement<HTMLElement>("#candidate-load-note");
   const candidateRetryButton = requireElement<HTMLButtonElement>(
     "#candidate-retry-button",
   );
@@ -131,6 +135,7 @@
     });
   let activePageKey: string | null = null;
   let activeCandidateContextKey: string | null = null;
+  let candidateLoadAuthorizedPageKey: string | null = null;
   const CANDIDATE_CACHE_LIMIT = 12;
   const candidateCache = new Map<string, TrainingCandidate[]>();
   let candidateLoadingRequest: {
@@ -263,9 +268,15 @@
     selectedCandidateId = null;
     candidateRequestAttempt += 1;
     activeCandidateContextKey = null;
+    candidateLoadAuthorizedPageKey = null;
     candidateSection.hidden = true;
     candidateStatus.textContent = "";
     candidateList.replaceChildren();
+    candidateLoadButton.hidden = activePageKey === null;
+    candidateLoadButton.disabled = activePageKey === null;
+    candidateLoadButton.textContent =
+      "この公開Pythonファイルを読み込み、練習候補を探す";
+    candidateLoadNote.hidden = activePageKey === null;
     candidateRetryButton.hidden = true;
     candidateRetryButton.disabled = activePageKey === null;
     selectedCodeElement.textContent = "";
@@ -800,6 +811,10 @@
         ? JSON.stringify([context.repository, context.commitOid, context.path])
         : null;
       candidateRetryButton.disabled = !context.commitOid;
+      candidateLoadButton.hidden =
+        candidateLoadAuthorizedPageKey === nextPageKey;
+      candidateLoadButton.disabled = !context.commitOid;
+      candidateLoadNote.hidden = candidateLoadButton.hidden;
       statusElement.textContent = `${context.repository} の ${context.path}（${context.ref}）を表示しています。`;
       return;
     }
@@ -809,6 +824,9 @@
     }
     activePageKey = null;
     activeCandidateContextKey = null;
+    candidateLoadButton.hidden = true;
+    candidateLoadButton.disabled = true;
+    candidateLoadNote.hidden = true;
     candidateRetryButton.disabled = true;
     statusElement.textContent =
       unsupportedMessages[context.reason] ??
@@ -829,13 +847,6 @@
       const context = await getPageContext();
       if (attempt !== pageContextAttempt) return;
       applyPageContext(context, sessionAlreadyReset);
-      if (
-        context.status === PAGE_STATUS.ELIGIBLE &&
-        context.commitOid &&
-        !selectedCodeElement.textContent
-      ) {
-        await loadCandidates(context);
-      }
     } catch (error) {
       if (attempt !== pageContextAttempt) return;
       if (!sessionAlreadyReset) {
@@ -843,6 +854,9 @@
       }
       activePageKey = null;
       activeCandidateContextKey = null;
+      candidateLoadButton.hidden = true;
+      candidateLoadButton.disabled = true;
+      candidateLoadNote.hidden = true;
       candidateRetryButton.disabled = true;
       statusElement.textContent = getErrorMessage(error);
     }
@@ -932,7 +946,10 @@
     }
   }
 
-  async function loadCandidates(context?: PageContext): Promise<void> {
+  async function loadCandidates(
+    context?: PageContext,
+    expectedPageKey?: string,
+  ): Promise<void> {
     if (isEvaluationLocked()) return;
     let requestAttempt: number | null = null;
     let loadingContextKey: string | null = null;
@@ -945,6 +962,21 @@
         pageContextGeneration !== pageContextAttempt
       )
         return;
+      if (expectedPageKey !== undefined) {
+        const resolvedPageKey =
+          context.status === PAGE_STATUS.ELIGIBLE
+            ? JSON.stringify([
+                context.repository,
+                context.commitOid ?? null,
+                context.ref,
+                context.path,
+              ])
+            : null;
+        if (resolvedPageKey !== expectedPageKey) {
+          applyPageContext(context);
+          return;
+        }
+      }
       if (context.status !== PAGE_STATUS.ELIGIBLE || !context.commitOid) {
         candidateStatus.textContent =
           "表示中のcommitを確認できません。ページを再読み込みするか、別のpublic Pythonファイルを開いてください。";
@@ -970,6 +1002,8 @@
       requestAttempt = ++candidateRequestAttempt;
       loadingContextKey = contextKey;
       candidateLoadingRequest = { contextKey, requestAttempt };
+      candidateLoadButton.hidden = true;
+      candidateLoadNote.hidden = true;
       candidateRetryButton.disabled = true;
       candidateRetryButton.hidden = true;
       candidateSection.hidden = false;
@@ -1024,22 +1058,40 @@
     }
   }
 
+  candidateLoadButton.addEventListener("click", () => {
+    const authorizedPageKey = activePageKey;
+    candidateLoadAuthorizedPageKey = authorizedPageKey;
+    candidateLoadButton.disabled = true;
+    candidateLoadButton.hidden = true;
+    candidateLoadNote.hidden = true;
+    candidateSection.hidden = false;
+    candidateList.replaceChildren();
+    candidateStatus.textContent = "現在のファイルから候補を探しています…";
+    void loadCandidates(undefined, authorizedPageKey ?? undefined);
+  });
+
   candidateRetryButton.addEventListener("click", () => {
+    const authorizedPageKey = activePageKey;
+    candidateLoadAuthorizedPageKey = authorizedPageKey;
     if (activeCandidateContextKey)
       candidateCache.delete(activeCandidateContextKey);
-    void loadCandidates();
+    void loadCandidates(undefined, authorizedPageKey ?? undefined);
   });
 
   function showCandidatePicker(): void {
+    const authorizedPageKey = activePageKey;
+    candidateLoadAuthorizedPageKey = authorizedPageKey;
     readingScreenVisible = false;
     trainingMethodsElement.hidden = false;
+    candidateLoadButton.hidden = true;
+    candidateLoadNote.hidden = true;
     candidateSection.hidden = false;
     sessionSection.hidden = true;
     readingResultElement.hidden = true;
     evaluationResultElement.hidden = true;
     candidateStatus.textContent = "候補一覧を読み込んでいます…";
     candidateRetryButton.hidden = true;
-    void loadCandidates();
+    void loadCandidates(undefined, authorizedPageKey ?? undefined);
     candidateSection.scrollIntoView({ block: "start" });
   }
 

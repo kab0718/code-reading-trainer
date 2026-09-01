@@ -63,7 +63,7 @@ code-reading-trainer/
 4. 「パッケージ化されていない拡張機能を読み込む」を選ぶ
 5. `dist/extension` ディレクトリを指定する
 
-public repositoryのPythonコード表示ページを開くと、URL、repository、ref、ファイルパス、commit OIDを判定し、現在のファイルからおすすめ候補を提示できます。Python以外のファイル、コード表示以外のページ、private repositoryは対象外として案内します。
+public repositoryのPythonコード表示ページを開くと、URL、repository、ref、ファイルパス、commit OIDを判定します。「この公開Pythonファイルを読み込み、練習候補を探す」を押したときだけファイル本文を取得し、端末内で解析しておすすめ候補を提示します。この操作ではAIへコードを送信しません。AIへの送信は、その後に「評価する」または「読解サポート」を操作したときに行います。Python以外のファイル、コード表示以外のページ、private repositoryは対象外として案内し、読み込みボタンも表示しません。
 
 GitHub内の画面遷移後も表示中のページを再判定します。
 

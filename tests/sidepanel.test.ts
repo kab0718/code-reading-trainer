@@ -189,6 +189,13 @@ function createSidepanelEnvironment({
     "#training-methods": createElement("#training-methods", {
       hidden: false,
     }),
+    "#candidate-load-button": createElement("#candidate-load-button", {
+      disabled: false,
+      hidden: true,
+    }),
+    "#candidate-load-note": createElement("#candidate-load-note", {
+      hidden: true,
+    }),
     "#candidate-retry-button": createElement("#candidate-retry-button", {
       disabled: false,
       hidden: true,
@@ -424,6 +431,10 @@ function createSidepanelEnvironment({
       listeners.get("#candidate-retry-button:click")();
       await new Promise((resolve) => setImmediate(resolve));
     },
+    async loadCandidates() {
+      listeners.get("#candidate-load-button:click")();
+      await new Promise((resolve) => setImmediate(resolve));
+    },
     chooseRenderedCandidate() {
       return listeners.get("<button>:click")();
     },
@@ -518,16 +529,60 @@ test("初期画面にGitHub上のテキスト選択導線を表示しない", ()
   assert.doesNotMatch(sidepanelHtmlSource, /対象コードを読む/u);
 });
 
-test("対象Pythonファイルでは追加操作なしで候補取得を始める", async () => {
+test("対象Pythonファイルでは明示操作まで候補取得を始めない", async () => {
   const environment = createSidepanelEnvironment();
   await flushPromises();
 
+  assert.equal(environment.candidateMessages.length, 0);
+  assert.equal(environment.elements["#candidate-section"].hidden, true);
+  assert.equal(environment.elements["#candidate-load-button"].hidden, false);
+  assert.match(sidepanelHtmlSource, /公開Pythonファイルを読み込み/u);
+  assert.match(sidepanelHtmlSource, /この操作ではAIには送信されません/u);
+
+  await environment.loadCandidates();
+
   assert.equal(environment.candidateMessages.length, 1);
   assert.equal(environment.elements["#candidate-section"].hidden, false);
-  assert.doesNotMatch(sidepanelHtmlSource, /おすすめから選ぶ/u);
 });
 
-test("同じcommitとファイルパスの候補はページ再確認時にキャッシュを使う", async () => {
+test("明示読み込みの失敗後は再試行できる", async () => {
+  const environment = createSidepanelEnvironment();
+  await flushPromises();
+  environment.setCandidatesHandler(async (message) => ({
+    contextKey: JSON.stringify([
+      message.context.repository,
+      message.context.commitOid,
+      message.context.path,
+    ]),
+    error: { message: "GitHub APIの利用上限に達しました。", retryable: true },
+    ok: false,
+    requestId: message.requestId,
+  }));
+
+  await environment.loadCandidates();
+
+  assert.equal(environment.elements["#candidate-retry-button"].hidden, false);
+  environment.setCandidatesHandler(async (message) => ({
+    candidates: [],
+    contextKey: JSON.stringify([
+      message.context.repository,
+      message.context.commitOid,
+      message.context.path,
+    ]),
+    ok: true,
+    requestId: message.requestId,
+  }));
+
+  await environment.requestCandidates();
+
+  assert.equal(environment.candidateMessages.length, 2);
+  assert.match(
+    environment.elements["#candidate-status"].textContent,
+    /候補が見つかりません/u,
+  );
+});
+
+test("ページ再確認だけではキャッシュ済み候補を自動表示しない", async () => {
   const environment = createSidepanelEnvironment();
   await flushPromises();
   await environment.startWithCandidate("return cached_value");
@@ -538,7 +593,51 @@ test("同じcommitとファイルパスの候補はページ再確認時にキ�
   await flushPromises();
 
   assert.equal(environment.candidateMessages.length, requestsAfterLoad);
-  assert.equal(environment.elements["#candidate-list"].children.length, 1);
+  assert.equal(environment.elements["#candidate-list"].children.length, 0);
+});
+
+test("読み込み操作直後にページが変わった場合は新しいファイルを取得しない", async () => {
+  const environment = createSidepanelEnvironment();
+  await flushPromises();
+  let resolveContext;
+  environment.setPageContextHandler(
+    () =>
+      new Promise((resolve) => {
+        resolveContext = resolve;
+      }),
+  );
+
+  const loadStarted = environment.loadCandidates();
+  await flushPromises();
+  resolveContext(eligibleContext("second.py"));
+  await loadStarted;
+  await flushPromises();
+
+  assert.equal(environment.candidateMessages.length, 0);
+  assert.match(environment.elements["#status"].textContent, /second\.py/u);
+  assert.equal(environment.elements["#candidate-load-button"].hidden, false);
+});
+
+test("再試行直後にページが変わった場合も新しいファイルを取得しない", async () => {
+  const environment = createSidepanelEnvironment();
+  await flushPromises();
+  let resolveContext;
+  environment.setPageContextHandler(
+    () =>
+      new Promise((resolve) => {
+        resolveContext = resolve;
+      }),
+  );
+
+  const retryStarted = environment.requestCandidates();
+  await flushPromises();
+  resolveContext(eligibleContext("second.py"));
+  await retryStarted;
+  await flushPromises();
+
+  assert.equal(environment.candidateMessages.length, 0);
+  assert.match(environment.elements["#status"].textContent, /second\.py/u);
+  assert.equal(environment.elements["#candidate-load-button"].hidden, false);
 });
 
 test("同じページの候補取得中に通知が重なっても要求を共有する", async () => {
@@ -594,13 +693,17 @@ test("候補の手動再試行中に後着した古いページ情報を破棄�
   await flushPromises();
 
   assert.match(environment.elements["#status"].textContent, /second\.py/u);
-  assert.doesNotMatch(
+  assert.equal(environment.candidateMessages.length, 0);
+
+  await environment.loadCandidates();
+
+  assert.match(
     environment.candidateMessages.at(-1).context.path,
-    /first\.py/u,
+    /second\.py/u,
   );
 });
 
-test("古い候補要求中に対象外ページを経由して同じページへ戻っても再取得する", async () => {
+test("古い候補要求中にページ遷移して戻っても明示操作まで再取得しない", async () => {
   const environment = createSidepanelEnvironment();
   await flushPromises();
   const pendingResolvers = [];
@@ -634,9 +737,14 @@ test("古い候補要求中に対象外ページを経由して同じページ�
   environment.navigate(eligibleContext("first.py"));
   await flushPromises();
 
-  assert.equal(environment.candidateMessages.length, requestsBefore + 2);
+  assert.equal(environment.candidateMessages.length, requestsBefore + 1);
   pendingResolvers[0]();
   await flushPromises();
+  assert.equal(environment.elements["#candidate-section"].hidden, true);
+
+  await environment.loadCandidates();
+
+  assert.equal(environment.candidateMessages.length, requestsBefore + 2);
   assert.equal(
     environment.elements["#candidate-status"].textContent,
     "現在のファイルから候補を探しています…",
@@ -1270,6 +1378,8 @@ test("回答入力から候補一覧へ戻るとキャッシュ済み候補を�
   assert.equal(environment.candidateMessages.length, requestsBefore);
   assert.equal(environment.elements["#candidate-section"].hidden, false);
   assert.equal(environment.elements["#candidate-list"].children.length, 1);
+  assert.equal(environment.elements["#candidate-load-button"].hidden, true);
+  assert.equal(environment.elements["#candidate-load-note"].hidden, true);
 });
 
 test("読解ガイドから候補一覧へ戻るとキャッシュ済み候補を再描画する", async () => {
@@ -1536,7 +1646,28 @@ test("対象外ページへの遷移ではおすすめ候補の操作を無効�
   await flushPromises();
 
   assert.equal(environment.elements["#candidate-retry-button"].disabled, true);
+  assert.equal(environment.elements["#candidate-load-button"].hidden, true);
+  assert.equal(environment.elements["#candidate-load-note"].hidden, true);
   assert.match(environment.elements["#status"].textContent, /Python/u);
+});
+
+test("private repositoryでは読み込み操作もソース取得も行わない", async () => {
+  const environment = createSidepanelEnvironment();
+  await flushPromises();
+
+  environment.navigate({
+    reason: "private-repository",
+    status: "unsupported",
+  });
+  await flushPromises();
+
+  assert.equal(environment.candidateMessages.length, 0);
+  assert.equal(environment.elements["#candidate-load-button"].hidden, true);
+  assert.equal(environment.elements["#candidate-load-note"].hidden, true);
+  assert.match(
+    environment.elements["#status"].textContent,
+    /public repository/u,
+  );
 });
 
 test("候補コードと回答が揃った場合だけ評価操作を有効にする", async () => {
